@@ -22,7 +22,7 @@ import threading
 import numpy as np
 import pytest
 
-from shout.asr import ParakeetASR
+from shout_daemon.asr import ParakeetASR
 
 
 SMALL_MODEL = os.environ.get(

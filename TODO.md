@@ -74,12 +74,13 @@ shout/
 
 ## Phase plan
 
-### Phase 0 — Housekeeping
-- [ ] Rename `shout/` package → `shout_daemon/`
-- [ ] Delete `app.py`, `audio.py`
-- [ ] Drop `gradio` from `pyproject.toml`; `uv lock`
-- [ ] Update `__main__.py` to launch the daemon (placeholder)
-- [ ] Verify `asr.py` still loads and transcribes a WAV via a quick CLI smoke test
+### Phase 0 — Housekeeping ✅
+- [x] Rename `shout/` package → `shout_daemon/`
+- [x] Delete `app.py`, `audio.py`
+- [x] Drop `gradio` (and `sounddevice` — Swift owns mic capture now) from `pyproject.toml`; regen `uv.lock`
+- [x] Update `__main__.py` to launch the daemon (placeholder, with `--smoke` sanity check)
+- [x] Verify `asr.py` still loads and transcribes via `uv run shout-daemon --smoke` (load 13s, cold 1.08s, warm 54ms on M4 Pro)
+- [x] Tests: update import path; non-integration tests pass.
 
 ### Phase 1 — Python daemon
 - [ ] `shout_daemon/protocol.py` — message types: `LoadModel`, `Transcribe(pcm_f32_16k)`, `Status`, `Shutdown`. JSON header + length-prefixed binary payload.
@@ -161,5 +162,5 @@ shout/
 
 ## Status
 
-- **Current phase:** pre-Phase 0. Design locked, repo still in POC/Gradio shape.
+- **Current phase:** Phase 0 complete. Repo restructured to `shout_daemon/`, Gradio gone, smoke test green. Ready for Phase 1 (Unix socket server + IPC protocol).
 - **Last update:** 2026-05-05
