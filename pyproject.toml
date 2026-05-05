@@ -1,0 +1,36 @@
+[project]
+name = "shout"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "gradio>=6.14.0",
+    "numpy>=2.4.4",
+    "parakeet-mlx>=0.5.1",
+    "sounddevice>=0.5.5",
+    "soundfile>=0.13.1",
+]
+
+[project.scripts]
+shout = "shout.app:main"
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["shout"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires the Parakeet model weights (slow / network / GPU)",
+]
