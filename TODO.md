@@ -121,7 +121,8 @@ Current local notes:
   server tests do not skip under long pytest temp directories.
 - `AVAudioEngine.stop()` alone does not release the mic; the recorder must drop
   the engine/converter/format objects between recordings.
-- Accessibility covers both the global event tap and synthetic paste.
+- Input Monitoring is required for the global event tap; Accessibility is
+  required for synthetic paste.
 - The system Globe/Fn key is reserved by macOS and is rejected by the hotkey
   recorder.
 - Audio sent to the daemon must be little-endian float32 mono PCM, 16 kHz.

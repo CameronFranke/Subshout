@@ -72,12 +72,31 @@ final class HotkeyManager {
 
     // MARK: - Permissions
 
-    /// Returns true if Accessibility access is currently granted.  Pass
+    /// Returns true if Accessibility access is currently granted. Pass
     /// `prompt: true` to show the system "open System Settings" dialog.
+    /// Accessibility is required for the synthetic ⌘V paste.
     @discardableResult
     static func ensureAccessibility(prompt: Bool) -> Bool {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         return AXIsProcessTrustedWithOptions([key: prompt] as CFDictionary)
+    }
+
+    /// Returns true if Input Monitoring / ListenEvent access is granted.
+    /// This is the permission macOS uses for global keyboard event taps.
+    @discardableResult
+    static func ensureInputMonitoring(prompt: Bool) -> Bool {
+        if CGPreflightListenEventAccess() { return true }
+        if prompt { return CGRequestListenEventAccess() }
+        return false
+    }
+
+    /// subshout needs both privacy grants: Input Monitoring for the hotkey
+    /// event tap and Accessibility for paste synthesis.
+    @discardableResult
+    static func ensureRequiredPermissions(prompt: Bool) -> Bool {
+        let hasAccessibility = ensureAccessibility(prompt: prompt)
+        let hasInputMonitoring = ensureInputMonitoring(prompt: prompt)
+        return hasAccessibility && hasInputMonitoring
     }
 
     // MARK: - Lifecycle

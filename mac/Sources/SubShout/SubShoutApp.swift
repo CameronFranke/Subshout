@@ -88,18 +88,21 @@ private struct SubShoutMenu: View {
 
             Divider()
 
-            // Hotkey block: status text + actions.  When AX is denied we
-            // show a one-click button to the right pane in System Settings.
+            // Hotkey block: status text + actions. When privacy grants are
+            // missing, show one-click buttons to the right System Settings panes.
             if controller.hotkeyActive {
                 Text("Hotkey: \(settings.trigger.humanLabel)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Hotkey: not active — Accessibility required")
+                Text("Hotkey: not active — permissions required")
                     .font(.caption)
                     .foregroundStyle(.orange)
                 Button("Open Accessibility Settings") {
                     controller.openAccessibilitySettings()
+                }
+                Button("Open Input Monitoring Settings") {
+                    controller.openInputMonitoringSettings()
                 }
                 Button("Re-install hotkey listener") {
                     controller.reinstallHotkey()

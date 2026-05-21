@@ -78,10 +78,20 @@ xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 # Ad-hoc sign the local build when codesign is available. This does not require
 # an Apple Developer account, but it avoids a class of Gatekeeper/library-load
-# complaints when the bundled Python imports native `.so` extensions.
+# complaints when the bundled Python imports native `.so` extensions. The
+# explicit designated requirement keeps the app's TCC identity stable across
+# local rebuilds; the default ad-hoc requirement is just a cdhash, which changes
+# every install and makes Accessibility/Input Monitoring appear enabled while
+# still not matching the current binary.
 if command -v codesign >/dev/null 2>&1; then
     echo "==> Ad-hoc signing..."
-    if ! codesign --force --deep --sign - "$DEST"; then
+    if ! codesign \
+        --force \
+        --deep \
+        --sign - \
+        --identifier com.cameronfranke.SubShout \
+        --requirements '=designated => identifier "com.cameronfranke.SubShout"' \
+        "$DEST"; then
         echo "WARNING: ad-hoc signing failed; continuing because this is a local unsigned build." >&2
     fi
 fi

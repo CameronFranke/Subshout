@@ -18,9 +18,9 @@ ad-hoc signs when possible, and launches the app. First install can take
 several minutes because it builds the bundled Python environment. The first
 recording may also download Parakeet weights (~1.2 GB).
 
-Grant **Microphone** and **Accessibility** when macOS asks. Default hotkey:
-**double-tap left ⌥ (Option)**. Rebind it from the menu bar icon → Settings →
-Hotkey.
+Grant **Microphone**, **Accessibility**, and **Input Monitoring** when macOS asks.
+Default hotkey: **double-tap left ⌥ (Option)**. Rebind it from the menu bar icon
+→ Settings → Hotkey.
 
 For a non-launching install smoke test, use `./install.sh --no-launch`.
 
@@ -55,23 +55,25 @@ resetting the floating level pill position.
 
 ## Permissions
 
-macOS asks for two permissions:
+macOS asks for three permissions:
 
 - **Microphone** — used only while a recording is active. The CoreAudio engine
   is torn down after each take so Control Center should show the mic released
   within about a second.
-- **Accessibility** — required for the global hotkey event tap and for posting
-  ⌘V. subshout listens for the configured hotkey and does not modify normal key
-  events.
+- **Input Monitoring** — required for the global hotkey listener. subshout uses a
+  listen-only event tap and does not modify normal key events.
+- **Accessibility** — required for posting ⌘V after transcription.
 
-If you grant Accessibility after the app is already running, click the menu bar
-icon → **Re-install hotkey listener**.
+If you grant Accessibility or Input Monitoring after the app is already running,
+click the menu bar icon → **Re-install hotkey listener**, or quit/reopen
+subshout.
 
 ## Troubleshooting
 
-**Hotkey does nothing after granting Accessibility.**  Re-install the hotkey
-listener from the menu bar icon. macOS often requires the event tap to be
-re-armed after permission changes.
+**Hotkey does nothing.**  Confirm both Accessibility and Input Monitoring are
+enabled for `/Applications/subshout.app`, then use menu bar icon → Re-install
+hotkey listener. If you just reinstalled a local build, remove/re-add subshout in
+those privacy panes once so macOS refreshes the code identity.
 
 **First recording is slow.**  The selected Parakeet model downloads on first
 use, then the daemon warms it with a short silence transcription. Subsequent

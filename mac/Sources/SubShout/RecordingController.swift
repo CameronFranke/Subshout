@@ -26,9 +26,9 @@ final class RecordingController: ObservableObject {
     @Published private(set) var lastTranscript: String = ""
     @Published private(set) var daemonReady: Bool = false
 
-    /// True once the global hotkey tap is alive AND Accessibility is
-    /// granted to *this* binary.  When false the menu surfaces a clear
-    /// "grant accessibility" prompt.
+    /// True once the global hotkey tap is alive and the required macOS privacy
+    /// grants (Accessibility + Input Monitoring) are present for this binary.
+    /// When false the menu surfaces clear permission actions.
     @Published private(set) var hotkeyActive: Bool = false
 
     let settings: AppSettings
@@ -104,11 +104,11 @@ final class RecordingController: ObservableObject {
     }
 
     /// User explicitly asked to (re-)install the hotkey listener.
-    /// Force-prompts Accessibility if not granted.
+    /// Force-prompts required hotkey permissions if not granted.
     func reinstallHotkey() {
         hotkeys.stop()
         hotkeyActive = false
-        let granted = HotkeyManager.ensureAccessibility(prompt: true)
+        let granted = HotkeyManager.ensureRequiredPermissions(prompt: true)
         if granted {
             installHotkey()
         }
@@ -120,6 +120,12 @@ final class RecordingController: ObservableObject {
     /// Open the Accessibility pane in System Settings directly.
     func openAccessibilitySettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Open the Input Monitoring pane in System Settings directly.
+    func openInputMonitoringSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
         NSWorkspace.shared.open(url)
     }
 
@@ -295,25 +301,27 @@ final class RecordingController: ObservableObject {
     // MARK: - Hotkey install + AX polling
     //
     // First-launch flow:
-    //   1. Try to install the tap.  If AX is already trusted, this works.
-    //   2. If not trusted, prompt (system dialog appears once per binary)
-    //      and start a background poll task that re-checks every 1.5s.
-    //   3. As soon as AX flips to trusted, install the tap and stop polling.
+    //   1. Try to install the tap. If Accessibility + Input Monitoring are
+    //      already trusted, this works.
+    //   2. If not trusted, prompt (system dialogs appear once per binary) and
+    //      start a background poll task that re-checks every 1.5s.
+    //   3. As soon as both grants flip to trusted, install the tap and stop
+    //      polling.
     //
     // The user never has to come back and click "Re-install" — they just
     // grant access in System Settings and the hotkey lights up on its own.
 
     private func installHotkeyOrPoll() {
-        if HotkeyManager.ensureAccessibility(prompt: false) {
+        if HotkeyManager.ensureRequiredPermissions(prompt: false) {
             installHotkey()
             if hotkeyActive { return }
         }
         let key = "subshout.didNagAccessibility"
         if !UserDefaults.standard.bool(forKey: key) {
-            _ = HotkeyManager.ensureAccessibility(prompt: true)
+            _ = HotkeyManager.ensureRequiredPermissions(prompt: true)
             UserDefaults.standard.set(true, forKey: key)
         }
-        log.warning("Accessibility not granted; polling for grant")
+        log.warning("Accessibility/Input Monitoring not granted; polling for grants")
         startAXPolling()
     }
 
@@ -334,7 +342,7 @@ final class RecordingController: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 if Task.isCancelled { return }
-                guard HotkeyManager.ensureAccessibility(prompt: false) else { continue }
+                guard HotkeyManager.ensureRequiredPermissions(prompt: false) else { continue }
                 let installed = await MainActor.run { () -> Bool in
                     guard let self = self else { return true }   // treat as "stop"
                     self.installHotkey()
