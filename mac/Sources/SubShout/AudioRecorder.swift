@@ -112,8 +112,14 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         self.audioOutput = newOutput
 
         log.info("starting capture: device=\(device.localizedName, privacy: .public)")
-        newSession.startRunning()
-        log.info("capture session running=\(newSession.isRunning, privacy: .public)")
+        // `startRunning()` is synchronous and can block for seconds or wedge on
+        // problematic Bluetooth aggregate devices. Never run it on the main
+        // actor; start the session on the capture queue and let stop tear it
+        // down from that same queue.
+        captureQueue.async { [weak self, newSession] in
+            newSession.startRunning()
+            self?.log.info("capture session running=\(newSession.isRunning, privacy: .public)")
+        }
     }
 
     /// Stop capture and return the accumulated PCM as little-endian float32
@@ -123,9 +129,15 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         guard let session = self.session else { return Data() }
 
         audioOutput?.setSampleBufferDelegate(nil, queue: nil)
-        session.stopRunning()
         self.audioOutput = nil
         self.session = nil
+
+        // Stop on the same serial queue used to start the session. Do not block
+        // the main actor here; Bluetooth devices can be slow to tear down.
+        captureQueue.async { [weak self, session] in
+            session.stopRunning()
+            self?.log.info("capture session stopped")
+        }
 
         lock.lock()
         let copy = pcmBuffer
