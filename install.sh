@@ -109,10 +109,12 @@ cat <<'EOF'
 subshout is now installed.
 
   • Microphone:   accept the system prompt the first time you record.
+  • Input Monitoring: open System Settings → Privacy & Security →
+    Input Monitoring, enable subshout.  (Needed for the global hotkey.)
   • Accessibility: open System Settings → Privacy & Security →
-    Accessibility, enable subshout, then click the menu-bar icon →
-    "Re-install hotkey listener".  (Needed for the global hotkey AND
-    for synthesizing ⌘V to paste.)
+    Accessibility, enable subshout.  (Needed for synthesizing ⌘V to paste.)
+  • After granting either permission, click the menu-bar icon →
+    "Re-install hotkey listener".
   • Default hotkey: double-tap left ⌥ (Option).  Change it in
     Settings (⌘, from the menu bar).
   • subshout starts automatically on login.  Toggle this in
