@@ -1,166 +1,129 @@
-# Shout — TODO / Plan
+# subshout TODO / state
 
-> Living document. Source of truth for design decisions and progress.
-> Update this file as decisions change or phases complete.
-> Subagents: read this top-to-bottom before doing anything.
+Last updated: 2026-05-21
 
-## Vision (one paragraph)
+## Current state
 
-A native macOS dictation app that replaces Superwhisper. Lives in the menu bar
-(top-right system tray). Press a global hotkey → record from mic → transcribe
-locally with `parakeet-mlx` (`parakeet-tdt-0.6b-v2` by default) → paste at
-cursor and leave on clipboard. Distributed via GitHub Releases as an unsigned
-`.app` + `.dmg`. Goal: Cameron deletes Superwhisper from his machine.
+subshout is a native macOS menu-bar dictation app for Apple Silicon:
 
-## Locked-in design decisions
+1. Swift app captures mic audio, handles global hotkey/settings/pill UI, writes
+   transcripts to the pasteboard, and posts ⌘V.
+2. Python daemon serves Parakeet MLX transcription over a Unix-domain socket.
+3. Clone-and-run install path builds a bundled Python daemon and installs
+   `/Applications/subshout.app`.
 
-| Topic | Decision |
-|---|---|
-| **Architecture** | Swift `.app` (UI, hotkey, audio capture, paste) + Python daemon (model, IPC over Unix socket). Daemon bundled inside `Shout.app/Contents/Resources/`. |
-| **ASR engine** | `parakeet-mlx` running `mlx-community/parakeet-tdt-0.6b-v2` by default. Reuses existing `shout/asr.py`. |
-| **Hotkey default** | Double-tap **left Option (⌥)**. Threshold ~300ms. Disambiguates from normal modifier usage. |
-| **Hotkey rebinding** | "Click to record" UI in settings. Bare modifiers → double-tap detection; real keys/combos → single-press detection. |
-| **Trigger mode** | Radio: **Toggle** (default) or **Hold-to-talk**. |
-| **Floating pill** | Borderless `NSWindow`, `.statusBar` level, bottom-center ~120pt above dock. Siri-style ~12 vertical bars driven by audio RMS. |
-| **Sounds** | `/System/Library/Sounds/Tink.aiff` on start, `Pop.aiff` on stop. Toggleable. |
-| **Paste** | Put text on `NSPasteboard`, post ⌘V via `CGEventPost`, leave on clipboard. |
-| **Model picker** | Menu bar dropdown, uses existing `shout/models.py` list. |
-| **Distribution** | GitHub Releases. Unsigned `.dmg`. README includes `xattr -dr com.apple.quarantine /Applications/Shout.app` one-liner. No Apple Developer account yet. |
-| **Test bench** | Delete `app.py` and the `gradio` dep. |
+The old Phase 0–11 planning docs were consolidated here. This file is now the
+single project status / TODO document; README.md is for end users.
 
-## Target repo layout
+## Implemented
 
+### App behavior
+
+- Menu-bar app with glyph status and menu actions.
+- Default hotkey: double-tap left Option.
+- Hotkey rebinding UI supports modifier double-taps and key combos.
+- Toggle and hold-to-talk trigger modes.
+- Per-recording `AVAudioEngine` lifecycle so the mic releases after each take.
+- Live floating level pill with spectrum bars and resettable position.
+- Start/stop sounds using system Tink/Pop sounds.
+- Pasteboard write + synthetic ⌘V paste, with auto-paste skipped when subshout
+  itself is frontmost.
+- Settings window for hotkey, trigger mode, model, sounds, and login item.
+- Login item support through `SMAppService.mainApp`.
+
+### Python daemon
+
+- `shout_daemon/protocol.py`: framed JSON + optional binary payload.
+- `shout_daemon/server.py`: asyncio Unix socket server, single-client guard,
+  stale-socket cleanup, socket permissions, status/load/transcribe/shutdown.
+- `shout_daemon/asr.py`: Parakeet wrapper pinned to one MLX worker thread.
+- Daemon binds the socket before preloading so the app can poll readiness during
+  first-run model download.
+- Warmup transcription after model load to pay the first MLX compile cost before
+  the user's first real take.
+
+### Packaging / repo
+
+- User-facing rename landed as `subshout`.
+- Internal identifiers remain `SubShout`, `shout_daemon`, and `shout-daemon`.
+- `install.sh` / `uninstall.sh` at repo root.
+- `scripts/build-daemon-bundle.sh`: python-build-standalone + `uv pip install
+  --target` bundle at `mac/Resources/shout-daemon/`.
+- `scripts/build-app.sh`: SwiftPM build → `build/subshout.app`, copying the
+  daemon bundle when present.
+- `scripts/run-dev.sh`: debug app with `SHOUT_DAEMON_CMD=scripts/dev-daemon.sh`.
+- MIT license.
+- GitHub Actions CI for Python tests, Swift build/tests, and shellcheck.
+
+## Verification snapshot
+
+Commands that should be green before a release:
+
+```bash
+uv run pytest -m 'not integration'
+cd mac && swift build --product SubShout
+cd mac && swift test --parallel       # requires full Xcode, not just CLT
+bash -n install.sh uninstall.sh scripts/*.sh
+./install.sh                          # slow/full end-to-end install path
 ```
-shout/
-├── TODO.md                          ← this file
-├── README.md                        ← rewrite for end users
-├── pyproject.toml                   ← daemon-only deps, no gradio
-├── uv.lock
-├── shout_daemon/                    ← renamed from shout/
-│   ├── __init__.py
-│   ├── __main__.py                  ← entry point: `shout-daemon`
-│   ├── asr.py                       ← (existing, unchanged)
-│   ├── models.py                    ← (existing, unchanged)
-│   ├── server.py                    ← Unix socket server, request/response loop
-│   └── protocol.py                  ← IPC message schemas
-├── mac/
-│   ├── Shout.xcodeproj
-│   └── Shout/
-│       ├── ShoutApp.swift           ← @main, NSStatusItem
-│       ├── DaemonClient.swift       ← spawns + talks to Python over UDS
-│       ├── HotkeyManager.swift      ← CGEventTap, double-tap detection, rebinding
-│       ├── AudioRecorder.swift      ← AVAudioEngine, 16kHz mono float32
-│       ├── PillWindow.swift         ← floating overlay + bar visualizer
-│       ├── Pasteboard.swift         ← clipboard + ⌘V synth
-│       ├── Settings.swift           ← UserDefaults wrapper
-│       ├── SettingsWindow.swift     ← SwiftUI settings UI
-│       └── Resources/
-│           └── shout-daemon/        ← bundled python env (built at packaging time)
-├── scripts/
-│   ├── build-daemon-bundle.sh       ← uv → standalone python bundle into mac/Shout/Resources/
-│   ├── build-app.sh                 ← xcodebuild → Shout.app
-│   └── make-dmg.sh                  ← .app → Shout.dmg
-└── .github/workflows/
-    └── release.yml                  ← tag → build → upload to Releases
-```
 
-## Files slated for deletion
+Current local notes:
 
-- `shout/app.py` — Gradio UI
-- `shout/audio.py` — superseded by Swift `AudioRecorder`
-- `data/` — POC audio scratch (verify before deleting)
-- `tests/` — POC tests, will rewrite for daemon
-- `gradio` dep in `pyproject.toml`
+- `uv run pytest -m 'not integration'` passes.
+- `swift build --product SubShout` passes with Command Line Tools.
+- `./install.sh --no-launch` builds the daemon bundle, builds release app,
+  installs to `/Applications`, ad-hoc signs, and verifies after running the
+  bundled daemon `--version`.
+- `swift test` requires full Xcode/XCTest. Local CLT-only environments fail with
+  `no such module 'XCTest'`; CI/full Xcode should run it.
+- The final hardware smoke test is still required after launching the installed
+  app: grant Mic/Accessibility → record → transcribe → paste → quit/relaunch.
 
-## Phase plan
+## Before v0.1.0
 
-### Phase 0 — Housekeeping ✅
-- [x] Rename `shout/` package → `shout_daemon/`
-- [x] Delete `app.py`, `audio.py`
-- [x] Drop `gradio` (and `sounddevice` — Swift owns mic capture now) from `pyproject.toml`; regen `uv.lock`
-- [x] Update `__main__.py` to launch the daemon (placeholder, with `--smoke` sanity check)
-- [x] Verify `asr.py` still loads and transcribes via `uv run shout-daemon --smoke` (load 13s, cold 1.08s, warm 54ms on M4 Pro)
-- [x] Tests: update import path; non-integration tests pass.
+1. Launch `/Applications/subshout.app` and verify model download, Mic /
+   Accessibility prompts, recording, paste, and login-item toggle.
+2. Verify Swift tests on a full-Xcode machine or in CI.
+3. Push to `git@github.com:CameronFranke/Subshout.git`.
+4. Configure GitHub branch protection for `main`:
+   - require PR before merge;
+   - require 1 approval;
+   - require CI status checks;
+   - block force pushes and branch deletion.
+5. Optional: add `.github/CODEOWNERS` with `* @CameronFranke` if you want every
+   PR to request you explicitly.
+6. Tag the first release after the install/hardware smoke test passes:
+   `git tag v0.1.0 && git push origin main --tags`.
 
-### Phase 1 — Python daemon
-- [ ] `shout_daemon/protocol.py` — message types: `LoadModel`, `Transcribe(pcm_f32_16k)`, `Status`, `Shutdown`. JSON header + length-prefixed binary payload.
-- [ ] `shout_daemon/server.py` — Unix socket at `~/Library/Application Support/Shout/daemon.sock`. Single-client. Stdout/stderr → log file at `~/Library/Logs/Shout/daemon.log`.
-- [ ] CLI: `shout-daemon --socket PATH --preload MODEL_ID`
-- [ ] Smoke test: python client sends a WAV, gets text back
+## Deferred / intentionally skipped
 
-### Phase 2 — Swift app skeleton
-- [ ] `mac/Shout.xcodeproj` — SwiftUI app, deployment target macOS 13+
-- [ ] `NSStatusItem` with mic glyph, menu items: Record / Settings / Quit
-- [ ] `DaemonClient.swift` — spawn bundled `shout-daemon`, connect over UDS, send a hardcoded WAV, log returned text
-- [ ] End-to-end: launch app, click "Test transcribe", see text in logs
+- DMG and GitHub Release asset workflow. Clone-and-run is the only v0.1 install
+  path for now. If this becomes worth doing, add `scripts/make-dmg.sh` and a
+  tag-triggered release workflow.
+- App icon (`mac/Resources/AppIcon.icns` + `CFBundleIconFile`). Without this,
+  Finder/Dock use the generic app icon when Settings is visible.
+- `CONTRIBUTING.md`. Not needed until outside contributions are expected.
+- Notarization / Developer ID signing. Current path is local build + quarantine
+  stripping + best-effort ad-hoc signing.
 
-### Phase 3 — Audio capture
-- [ ] `AudioRecorder.swift` — `AVAudioEngine` tap on input, downmix→mono, resample→16kHz, deliver float32 buffers
-- [ ] Mic permission request on first run (`NSMicrophoneUsageDescription` in Info.plist)
-- [ ] Manual record button in menu bar (start/stop) → end-to-end transcription
+## Repo hygiene rules
 
-### Phase 4 — Global hotkey
-- [ ] `HotkeyManager.swift` — `CGEventTap` at `cgSessionEventTap`
-- [ ] Double-tap modifier detection (track flagsChanged events, timer-based)
-- [ ] Single-press combo detection
-- [ ] Accessibility permission request + nag if denied
-- [ ] Bind default: double-tap left ⌥
-- [ ] "Click to record" rebinding flow in Settings
+- Do not commit `data/`; those are local Pi/session artifacts.
+- Do not commit `mac/Resources/shout-daemon/`; it is a generated ~GB-scale
+  daemon bundle.
+- Do not commit `build/`, `mac/.build/`, `.venv/`, `.cache/`, `__pycache__/`, or
+  pytest cache directories.
+- Keep README.md user-facing. Put implementation state and release TODOs here.
 
-### Phase 5 — Trigger modes
-- [ ] Toggle mode: hotkey → start; hotkey again → stop
-- [ ] Hold-to-talk: hotkey down → record; hotkey up → stop. Min duration ~150ms to avoid taps becoming empty recordings.
-- [ ] Setting persisted in `UserDefaults`
+## Gotchas
 
-### Phase 6 — Floating pill
-- [ ] `PillWindow.swift` — borderless `NSWindow`, transparent, `.statusBar` level, ignores mouse events, all-spaces collection behavior
-- [ ] SwiftUI view: 12 vertical bars, heights from a level buffer
-- [ ] Hook level buffer to `AudioRecorder` RMS output (every ~33ms)
-- [ ] Fade in on record start, fade out on stop
-
-### Phase 7 — Clipboard + paste
-- [ ] `Pasteboard.swift` — write text to `NSPasteboard.general`
-- [ ] Synthesize ⌘V via `CGEvent` keyDown/keyUp on `kVK_ANSI_V` with maskCommand
-- [ ] No clipboard restore (per decision: leave on clipboard)
-- [ ] Handle paste-failed case gracefully (e.g. no focused field) — fall back to clipboard-only + brief notification
-
-### Phase 8 — Sounds
-- [ ] `NSSound(contentsOfFile: "/System/Library/Sounds/Tink.aiff")` on start, `Pop.aiff` on stop
-- [ ] Toggle in Settings
-
-### Phase 9 — Settings window
-- [ ] SwiftUI `Settings` scene
-- [ ] Sections: Hotkey (rebind, mode), Model (picker, "Download" status), Sounds (toggle), About
-- [ ] Persist via `@AppStorage` / `UserDefaults`
-
-### Phase 10 — Packaging
-- [ ] `scripts/build-daemon-bundle.sh` — produce a standalone, relocatable Python env with `parakeet-mlx` installed (probably via `uv` + `python-build-standalone`). Place at `mac/Shout/Resources/shout-daemon/`.
-- [ ] `scripts/build-app.sh` — `xcodebuild` → `Shout.app`, ensure daemon bundle is copied into `Resources/`
-- [ ] `scripts/make-dmg.sh` — `create-dmg` or hdiutil
-- [ ] Test on a clean Mac account: launch, grant Mic + Accessibility, record, paste
-
-### Phase 11 — Release infra
-- [ ] `.github/workflows/release.yml` — on tag `v*`, run build scripts on macOS runner, attach `.dmg` to GitHub Release
-- [ ] Rewrite `README.md` for end users: download, quarantine one-liner, permissions, how to use, how to rebind
-- [ ] First public release: `v0.1.0`
-
-## Open questions
-
-*(none right now — every design decision above is locked. Add new ones here as they come up.)*
-
-## Notes / gotchas to remember
-
-- **First MLX call after model load is slow** (~1s on M4 Pro for 3s audio) due to kernel compilation. Daemon should `Transcribe` a tiny silence buffer immediately after `LoadModel` to pay this cost upfront — user shouldn't see it.
-- **Accessibility permission** is needed for both `CGEventTap` (hotkey listening) AND `CGEventPost` (paste synth). One grant covers both.
-- **Mic permission** is separate; triggered by `AVAudioEngine` first use.
-- **Bundling Python in a `.app`** is the trickiest part of Phase 10. `python-build-standalone` + `uv pip install --target` into the bundle, then patch shebangs / use `sys.executable` correctly. Plan to spend real time here.
-- **Unsigned `.app`** users will hit "cannot be opened" on first launch. README must give the `xattr -dr com.apple.quarantine` line.
-- **Modifier-tap disambiguation:** during the double-tap window, if any non-modifier keyDown arrives, cancel the in-flight tap. This is what makes typing `é` not trigger Shout.
-- **Don't fight the system Globe key (fn).** macOS reserves it; if a user tries to bind it via "record hotkey," show a polite "this key isn't supported, pick another."
-- **Audio format expected by parakeet-mlx:** float32, mono, 16kHz. Confirm in `asr.py` before wiring AVAudioEngine.
-- **Existing measured perf** (M4 Pro, 0.6b-v2 bf16): cold ~1.15s for 3s audio, warm ~0.08s for 3s, ~0.14s for 10s. End-to-end target: <300ms from "stop recording" to "text pasted" for typical 5s utterances.
-
-## Status
-
-- **Current phase:** Phase 0 complete. Repo restructured to `shout_daemon/`, Gradio gone, smoke test green. Ready for Phase 1 (Unix socket server + IPC protocol).
-- **Last update:** 2026-05-05
+- macOS Unix socket paths are short. Tests use `/tmp/subshout-test-*` paths so
+  server tests do not skip under long pytest temp directories.
+- `AVAudioEngine.stop()` alone does not release the mic; the recorder must drop
+  the engine/converter/format objects between recordings.
+- Accessibility covers both the global event tap and synthetic paste.
+- The system Globe/Fn key is reserved by macOS and is rejected by the hotkey
+  recorder.
+- Audio sent to the daemon must be little-endian float32 mono PCM, 16 kHz.
+- `SHOUT_DAEMON_CMD` is for development only; production resolves the bundled
+  `Contents/Resources/shout-daemon/bin/shout-daemon`.

@@ -5,8 +5,8 @@ worker thread. MLX streams are per-thread: arrays created on thread A
 cannot be evaluated on thread B without raising
 ``RuntimeError: There is no Stream(gpu, 0) in current thread``.
 
-The daemon's IPC layer (Phase 1) accepts requests on whatever thread
-``asyncio`` / the socket server hands us. Funnelling everything through
+The daemon's IPC layer accepts requests on whatever thread ``asyncio`` / the
+socket server hands us. Funnelling everything through
 one ``ThreadPoolExecutor(max_workers=1)`` gives us a stable "MLX thread"
 for the lifetime of the process.
 """

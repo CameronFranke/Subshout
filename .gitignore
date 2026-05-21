@@ -1,4 +1,4 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
 build/
@@ -8,3 +8,28 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Swift / SwiftPM
+mac/.build/
+mac/.swiftpm/
+mac/Package.resolved
+
+# Built .app
+build/subshout.app/
+
+# Local agent/session artifacts
+# (Pi resumes, project indexes, transient handoff data, etc.)
+data/
+
+# Build caches (python-build-standalone tarball, etc.)
+.cache/
+
+# Bundled daemon — produced by scripts/build-daemon-bundle.sh, ~2 GB.
+# Never commit; install.sh regenerates it on every install.
+mac/Resources/shout-daemon/
+
+# Editor noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

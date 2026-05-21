@@ -1,0 +1,88 @@
+# CI for subshout.
+#
+# Jobs:
+#   * python — fast pytest without the integration/model-load tests.
+#   * swift — executable compile check plus pure XCTest unit tests.
+#   * shellcheck — script linting.
+#
+# We intentionally skip `scripts/build-daemon-bundle.sh` here. The bundle step
+# downloads a standalone Python plus the ML wheel tree and belongs in a manual
+# install smoke test or a future release workflow, not every PR.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: pytest (daemon)
+    # macOS-14 runners are arm64; needed because parakeet-mlx is Apple
+    # Silicon only.  We don't actually load the model in CI (no
+    # `-m integration`), but the wheels still need to install.
+    runs-on: macos-14
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Add uv to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: uv sync
+        run: uv sync --all-extras
+
+      - name: pytest (no integration)
+        # `-m 'not integration'` matches the README convention.  The
+        # integration suite needs the parakeet weights and is gated.
+        run: uv run pytest -m 'not integration' -v
+
+  swift:
+    name: swift test (app)
+    runs-on: macos-14
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mac
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: swift --version
+        run: swift --version
+
+      - name: swift build (debug, executable target)
+        # Catches compile errors in the executable target without paying
+        # for a release build.  The test target's `swift test` below also
+        # builds it transitively, but doing it explicitly first gives a
+        # cleaner failure log when something breaks.
+        run: swift build --product SubShout
+
+      - name: swift test
+        run: swift test --parallel
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: lint shell scripts
+        # External=SC1091 silences "can't follow non-constant source"
+        # for our REPO_ROOT-relative includes.
+        run: |
+          shellcheck \
+              --severity=warning \
+              --external-sources \
+              install.sh uninstall.sh scripts/*.sh

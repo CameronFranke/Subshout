@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Display name is intentionally lowercase "subshout".  Internal
+         identifiers (bundle ID, executable name) keep the camel-case
+         "SubShout" — they're never user-visible. -->
+    <key>CFBundleName</key>
+    <string>subshout</string>
+    <key>CFBundleDisplayName</key>
+    <string>subshout</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.cameronfranke.SubShout</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>SubShout</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <!-- Menu-bar / agent app: no Dock icon, no main menu. -->
+    <key>LSUIElement</key>
+    <true/>
+    <!-- Mic prompt copy.  This is what users see in the system permission
+         dialog the first time we tap the input node, so write it like a
+         human, not like a lawyer. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>subshout listens to your microphone while you hold the dictation hotkey, transcribes it on-device, and pastes the text where you're typing.</string>
+</dict>
+</plist>

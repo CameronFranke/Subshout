@@ -1,7 +1,7 @@
 [project]
 name = "shout-daemon"
 version = "0.1.0"
-description = "Shout ASR daemon: parakeet-mlx behind a Unix socket, driven by the Shout macOS app."
+description = "subshout ASR daemon: parakeet-mlx behind a Unix socket, driven by the macOS app."
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.4",
