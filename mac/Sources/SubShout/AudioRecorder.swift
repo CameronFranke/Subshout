@@ -65,6 +65,7 @@ final class AudioRecorder {
     private var engine: AVAudioEngine?
     private var converter: AVAudioConverter?
     private var targetFormat: AVAudioFormat?
+    private var sinkNode: AVAudioSinkNode?
 
     private let lock = NSLock()  // protects `pcmBuffer`
     private var pcmBuffer: [Float] = []
@@ -122,6 +123,7 @@ final class AudioRecorder {
         let newEngine = AVAudioEngine()
         let input = newEngine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
+        let newSink = AVAudioSinkNode { _, _, _ in noErr }
         guard inputFormat.sampleRate > 0 else {
             deviceConfig.restore()
             throw SubShoutError.audioEngineFailed("input format has zero sample rate (no input device?)")
@@ -165,9 +167,15 @@ final class AudioRecorder {
         self.engine = newEngine
         self.converter = newConverter
         self.targetFormat = target
+        self.sinkNode = newSink
 
-        // 4) Install the tap. The buffer size is a request, not a hard realtime
-        //    guarantee; AVAudioEngine may choose a device-appropriate cadence.
+        // 4) Build a real pull graph and install the input tap. A tap-only input
+        //    graph can start successfully but never deliver callbacks on some
+        //    devices (notably Bluetooth/aggregate inputs). Routing input into a
+        //    no-op sink node forces AVAudioEngine to render the input stream
+        //    without sending microphone audio to the user's speakers.
+        newEngine.attach(newSink)
+        newEngine.connect(input, to: newSink, format: inputFormat)
         input.installTap(onBus: 0, bufferSize: tapFrames, format: inputFormat) { [weak self] inputBuf, _ in
             self?.process(inputBuf)
         }
@@ -183,6 +191,7 @@ final class AudioRecorder {
             self.engine = nil
             self.converter = nil
             self.targetFormat = nil
+            self.sinkNode = nil
             deviceConfig.restore()
             throw SubShoutError.audioEngineFailed("engine.start() failed: \(error.localizedDescription)")
         }
@@ -207,6 +216,7 @@ final class AudioRecorder {
         self.engine = nil
         self.converter = nil
         self.targetFormat = nil
+        self.sinkNode = nil
 
         // Be a good citizen: put the device back the way we found it.
         deviceConfig.restore()
