@@ -208,6 +208,7 @@ final class RecordingController: ObservableObject {
     private func endRecording() {
         guard state == .recording else { return }
         let pcm = recorder.stopAndDrain()
+        log.info("recording stopped; pcmBytes=\(pcm.count, privacy: .public)")
         recordingStartedAt = nil
         if settings.soundsEnabled { Sounds.stop() }
         pill.hide()
@@ -216,6 +217,7 @@ final class RecordingController: ObservableObject {
         // Empty PCM → skip the daemon round-trip.  Cheap defense against
         // stop-immediately-after-start accidents.
         guard !pcm.isEmpty else {
+            log.warning("recording produced empty PCM; skipping transcription")
             state = .idle
             return
         }
@@ -227,6 +229,7 @@ final class RecordingController: ObservableObject {
 
         Task { [weak self, client = daemonClient] in
             do {
+                self?.log.info("sending transcription request: bytes=\(pcm.count, privacy: .public)")
                 let result = try await client.transcribe(pcm: pcm, sampleRate: 16_000)
                 await MainActor.run {
                     guard let self = self else { return }
@@ -246,6 +249,7 @@ final class RecordingController: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
+                    self?.log.error("transcription failed: \(error.localizedDescription, privacy: .public)")
                     self?.state = .error(error.localizedDescription)
                     NSSound.beep()
                 }

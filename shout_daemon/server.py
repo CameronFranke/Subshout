@@ -309,8 +309,21 @@ class DaemonServer:
             np.float32, copy=True
         )
 
+        log.info(
+            "transcribe request: bytes=%d samples=%d sr=%d seconds=%.3f",
+            len(msg.payload),
+            audio.shape[0],
+            sr,
+            audio.shape[0] / float(sr),
+        )
         result = await asyncio.get_running_loop().run_in_executor(
             None, self.asr.transcribe_array, audio, sr
+        )
+        log.info(
+            "transcribe complete: text_len=%d audio_seconds=%.3f transcribe_seconds=%.3f",
+            len(result.text),
+            result.audio_seconds,
+            result.transcribe_seconds,
         )
         return {
             "type": "ok",

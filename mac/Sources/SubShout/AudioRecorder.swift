@@ -68,6 +68,10 @@ final class AudioRecorder {
     private var pcmBuffer: [Float] = []
     private let analyzer = FrequencyAnalyzer()
     private let deviceConfig = AudioDeviceConfig()
+    private var inputBufferCount = 0
+    private var convertedSampleCount = 0
+    private var peakLevel: Float = 0
+    private var zeroOutputReports = 0
 
     /// True iff a recording is in progress.  Single source of truth: an
     /// engine exists ⇔ the mic is open.
@@ -137,6 +141,10 @@ final class AudioRecorder {
         lock.lock()
         pcmBuffer.removeAll(keepingCapacity: true)
         lock.unlock()
+        inputBufferCount = 0
+        convertedSampleCount = 0
+        peakLevel = 0
+        zeroOutputReports = 0
 
         analyzer.reset()
         analyzer.output = { [weak self] bands in
@@ -206,6 +214,10 @@ final class AudioRecorder {
         pcmBuffer.removeAll(keepingCapacity: false)
         lock.unlock()
 
+        log.info(
+            "stopped capture: inputBuffers=\(self.inputBufferCount, privacy: .public) samples=\(copy.count, privacy: .public) seconds=\(Double(copy.count) / Self.targetSampleRate, privacy: .public) peak=\(self.peakLevel, privacy: .public)"
+        )
+
         // Float32 is already 4-byte little-endian on Apple silicon — no swap.
         return copy.withUnsafeBufferPointer { Data(buffer: $0) }
     }
@@ -217,39 +229,81 @@ final class AudioRecorder {
         // flight when stopAndDrain ran.  In practice removeTap quiesces
         // before returning, but the early-return is free insurance.
         guard let converter = converter, let target = targetFormat else { return }
+        inputBufferCount += 1
+        if inputBufferCount == 1 {
+            log.info(
+                "first input buffer: frames=\(inputBuf.frameLength, privacy: .public) sampleRate=\(inputBuf.format.sampleRate, privacy: .public) channels=\(inputBuf.format.channelCount, privacy: .public)"
+            )
+        }
+
         let ratio = target.sampleRate / inputBuf.format.sampleRate
-        // +16 frames of slack to handle resampler tails.
-        let outCap = AVAudioFrameCount(Double(inputBuf.frameLength) * ratio) + 16
-        guard outCap > 0,
-              let outBuf = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: outCap) else {
+        // Keep this comfortably larger than one tiny hardware callback. Some
+        // sample-rate converters emit buffered output in bursts rather than one
+        // perfectly proportional chunk per input callback.
+        let outCap = max(
+            AVAudioFrameCount(1024),
+            AVAudioFrameCount(Double(inputBuf.frameLength) * ratio) + 128
+        )
+        guard let outBuf = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: outCap) else {
             return
         }
-        var error: NSError?
+
         var consumed = false
-        let status = converter.convert(to: outBuf, error: &error) { _, outStatus in
-            if consumed {
-                outStatus.pointee = .noDataNow
-                return nil
+        var emittedThisInput = 0
+        while true {
+            var error: NSError?
+            outBuf.frameLength = 0
+            let status = converter.convert(to: outBuf, error: &error) { _, outStatus in
+                if consumed {
+                    outStatus.pointee = .noDataNow
+                    return nil
+                }
+                consumed = true
+                outStatus.pointee = .haveData
+                return inputBuf
             }
-            consumed = true
-            outStatus.pointee = .haveData
-            return inputBuf
-        }
-        if let e = error {
-            log.error("converter error: \(e.localizedDescription, privacy: .public)")
-            return
-        }
-        if status == .error { return }
-        let n = Int(outBuf.frameLength)
-        guard n > 0, let channels = outBuf.floatChannelData else { return }
-        let samples = channels[0]
+            if let e = error {
+                log.error("converter error: \(e.localizedDescription, privacy: .public)")
+                return
+            }
+            if status == .error { return }
 
-        analyzer.push(samples, count: n)
+            let n = Int(outBuf.frameLength)
+            if n > 0, let channels = outBuf.floatChannelData {
+                let samples = channels[0]
+                analyzer.push(samples, count: n)
 
-        // Append to the PCM buffer for transcription.
-        lock.lock()
-        pcmBuffer.reserveCapacity(pcmBuffer.count + n)
-        for i in 0..<n { pcmBuffer.append(samples[i]) }
-        lock.unlock()
+                lock.lock()
+                pcmBuffer.reserveCapacity(pcmBuffer.count + n)
+                for i in 0..<n {
+                    let sample = samples[i]
+                    pcmBuffer.append(sample)
+                    peakLevel = max(peakLevel, abs(sample))
+                }
+                lock.unlock()
+
+                emittedThisInput += n
+                convertedSampleCount += n
+            }
+
+            switch status {
+            case .haveData:
+                continue
+            case .inputRanDry, .endOfStream:
+                break
+            case .error:
+                return
+            @unknown default:
+                break
+            }
+            break
+        }
+
+        if emittedThisInput == 0 && zeroOutputReports < 3 {
+            zeroOutputReports += 1
+            log.warning(
+                "converter emitted 0 frames for input buffer \(self.inputBufferCount, privacy: .public); totalConverted=\(self.convertedSampleCount, privacy: .public)"
+            )
+        }
     }
 }
