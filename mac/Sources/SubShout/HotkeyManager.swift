@@ -224,6 +224,7 @@ final class HotkeyManager {
                    (now - lastCleanReleaseAt) <= Self.doubleTapWindow
                 {
                     // Second clean press within the window → fire double-tap.
+                    log.info("modifier double-tap matched: keyCode=\(target, privacy: .public)")
                     lastCleanReleaseAt = -1
                     dirtyThisCycle = false
                     DispatchQueue.main.async { [weak self] in self?.onActivate?() }
@@ -239,6 +240,7 @@ final class HotkeyManager {
                     if requireDouble {
                         lastCleanReleaseAt = now
                     } else {
+                        log.info("modifier single-tap matched: keyCode=\(target, privacy: .public)")
                         DispatchQueue.main.async { [weak self] in self?.onActivate?() }
                     }
                 } else {
@@ -269,8 +271,10 @@ final class HotkeyManager {
         let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         if type == .keyDown {
             if isAutorepeat { return }
+            log.info("key combo matched: keyCode=\(keyCode, privacy: .public) modifiers=\(want, privacy: .public)")
             DispatchQueue.main.async { [weak self] in self?.onActivate?() }
         } else {
+            log.info("key combo released: keyCode=\(keyCode, privacy: .public)")
             DispatchQueue.main.async { [weak self] in self?.onDeactivate?() }
         }
     }

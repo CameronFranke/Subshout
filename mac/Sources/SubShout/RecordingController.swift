@@ -149,6 +149,7 @@ final class RecordingController: ObservableObject {
     // MARK: - Hotkey handlers
 
     private func handleActivate() {
+        log.info("hotkey activate received; daemonReady=\(self.daemonReady, privacy: .public)")
         switch settings.triggerMode {
         case .toggle:
             toggleRecord()
@@ -158,6 +159,7 @@ final class RecordingController: ObservableObject {
     }
 
     private func handleDeactivate() {
+        log.info("hotkey deactivate received")
         guard settings.triggerMode == .holdToTalk else { return }
         guard state == .recording else { return }
         if let started = recordingStartedAt {
