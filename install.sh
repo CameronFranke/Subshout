@@ -99,6 +99,8 @@ fi
 if [[ "$LAUNCH" -eq 1 ]]; then
     echo "==> Launching..."
     open "$DEST"
+    echo "==> Opening Input Monitoring settings (enable subshout if prompted/listed)..."
+    open 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent' || true
 else
     echo "==> Installed; skipping launch (--no-launch)."
 fi

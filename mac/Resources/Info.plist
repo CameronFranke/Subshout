@@ -31,5 +31,7 @@
          human, not like a lawyer. -->
     <key>NSMicrophoneUsageDescription</key>
     <string>subshout listens to your microphone while you hold the dictation hotkey, transcribes it on-device, and pastes the text where you're typing.</string>
+    <key>NSInputMonitoringUsageDescription</key>
+    <string>subshout uses Input Monitoring for its global dictation hotkey. It uses a listen-only event tap and does not modify normal key events.</string>
 </dict>
 </plist>

@@ -18,9 +18,10 @@ ad-hoc signs when possible, and launches the app. First install can take
 several minutes because it builds the bundled Python environment. The first
 recording may also download Parakeet weights (~1.2 GB).
 
-Grant **Microphone**, **Accessibility**, and **Input Monitoring** when macOS asks.
-Default hotkey: **double-tap left ⌥ (Option)**. Rebind it from the menu bar icon
-→ Settings → Hotkey.
+Grant **Microphone**, **Input Monitoring**, and **Accessibility** when macOS
+asks. `install.sh` opens the Input Monitoring pane because macOS often requires
+adding local unsigned apps there by hand. Default hotkey: **double-tap left ⌥
+(Option)**. Rebind it from the menu bar icon → Settings → Hotkey.
 
 For a non-launching install smoke test, use `./install.sh --no-launch`.
 
@@ -66,7 +67,7 @@ macOS asks for three permissions:
 
 If you grant Accessibility or Input Monitoring after the app is already running,
 click the menu bar icon → **Re-install hotkey listener**, or quit/reopen
-subshout.
+subshout. The menu tells you which permission is still missing.
 
 ## Troubleshooting
 

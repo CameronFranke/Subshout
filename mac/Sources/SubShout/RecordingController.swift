@@ -30,6 +30,8 @@ final class RecordingController: ObservableObject {
     /// grants (Accessibility + Input Monitoring) are present for this binary.
     /// When false the menu surfaces clear permission actions.
     @Published private(set) var hotkeyActive: Bool = false
+    @Published private(set) var accessibilityGranted: Bool = false
+    @Published private(set) var inputMonitoringGranted: Bool = false
 
     let settings: AppSettings
 
@@ -108,7 +110,7 @@ final class RecordingController: ObservableObject {
     func reinstallHotkey() {
         hotkeys.stop()
         hotkeyActive = false
-        let granted = HotkeyManager.ensureRequiredPermissions(prompt: true)
+        let granted = refreshHotkeyPermissionState(prompt: true)
         if granted {
             installHotkey()
         }
@@ -312,17 +314,27 @@ final class RecordingController: ObservableObject {
     // grant access in System Settings and the hotkey lights up on its own.
 
     private func installHotkeyOrPoll() {
-        if HotkeyManager.ensureRequiredPermissions(prompt: false) {
+        if refreshHotkeyPermissionState(prompt: false) {
             installHotkey()
             if hotkeyActive { return }
         }
-        let key = "subshout.didNagAccessibility"
+        let key = "subshout.didNagHotkeyPermissions"
         if !UserDefaults.standard.bool(forKey: key) {
-            _ = HotkeyManager.ensureRequiredPermissions(prompt: true)
+            _ = refreshHotkeyPermissionState(prompt: true)
             UserDefaults.standard.set(true, forKey: key)
         }
-        log.warning("Accessibility/Input Monitoring not granted; polling for grants")
+        log.warning(
+            "hotkey permissions missing; accessibility=\(self.accessibilityGranted, privacy: .public) inputMonitoring=\(self.inputMonitoringGranted, privacy: .public)"
+        )
         startAXPolling()
+    }
+
+    private func refreshHotkeyPermissionState(prompt: Bool) -> Bool {
+        let accessibility = HotkeyManager.ensureAccessibility(prompt: prompt)
+        let inputMonitoring = HotkeyManager.ensureInputMonitoring(prompt: prompt)
+        accessibilityGranted = accessibility
+        inputMonitoringGranted = inputMonitoring
+        return accessibility && inputMonitoring
     }
 
     private func installHotkey() {
@@ -342,9 +354,9 @@ final class RecordingController: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 if Task.isCancelled { return }
-                guard HotkeyManager.ensureRequiredPermissions(prompt: false) else { continue }
                 let installed = await MainActor.run { () -> Bool in
                     guard let self = self else { return true }   // treat as "stop"
+                    guard self.refreshHotkeyPermissionState(prompt: false) else { return false }
                     self.installHotkey()
                     return self.hotkeyActive
                 }

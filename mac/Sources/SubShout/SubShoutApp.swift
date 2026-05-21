@@ -95,14 +95,18 @@ private struct SubShoutMenu: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Hotkey: not active — permissions required")
+                Text(hotkeyPermissionText)
                     .font(.caption)
                     .foregroundStyle(.orange)
-                Button("Open Accessibility Settings") {
-                    controller.openAccessibilitySettings()
+                if !controller.accessibilityGranted {
+                    Button("Open Accessibility Settings") {
+                        controller.openAccessibilitySettings()
+                    }
                 }
-                Button("Open Input Monitoring Settings") {
-                    controller.openInputMonitoringSettings()
+                if !controller.inputMonitoringGranted {
+                    Button("Open Input Monitoring Settings") {
+                        controller.openInputMonitoringSettings()
+                    }
                 }
                 Button("Re-install hotkey listener") {
                     controller.reinstallHotkey()
@@ -149,6 +153,17 @@ private struct SubShoutMenu: View {
         case .transcribing: return "Transcribing…"
         case .startingDaemon: return "Starting daemon…"
         case .error: return "Try again"
+        }
+    }
+
+    private var hotkeyPermissionText: String {
+        let missingAccessibility = !controller.accessibilityGranted
+        let missingInputMonitoring = !controller.inputMonitoringGranted
+        switch (missingAccessibility, missingInputMonitoring) {
+        case (true, true): return "Hotkey: not active — Accessibility + Input Monitoring required"
+        case (true, false): return "Hotkey: not active — Accessibility required"
+        case (false, true): return "Hotkey: not active — Input Monitoring required"
+        case (false, false): return "Hotkey: not active — re-install listener"
         }
     }
 
