@@ -54,9 +54,11 @@ final class AudioRecorder {
 
     static let targetSampleRate: Double = 16_000
 
-    /// Hardware buffer target.  CoreAudio routinely supports this on
-    /// built-in mics; external USB mics sometimes have a higher floor.
-    private static let preferredHWFrames: UInt32 = 256
+    /// Tap buffer target. Keep this conservative: some external / virtual input
+    /// devices accept tiny HAL buffer sizes but then never deliver tap buffers
+    /// to AVAudioEngine. 1024 frames is still low-latency enough for dictation
+    /// and much more reliable across devices.
+    private static let preferredTapFrames: AVAudioFrameCount = 1024
 
     // The recording graph.  All three are non-nil during a recording and
     // nil otherwise.  See "Lifecycle" in the type doc.
@@ -108,11 +110,11 @@ final class AudioRecorder {
     func start() throws {
         guard engine == nil else { return }
 
-        // 1) Configure the hardware first.  This must happen before
-        //    `engine.start()` so the engine sees the new buffer size.
-        let hwFrames = deviceConfig.configureLowLatencyInput(
-            targetFrames: Self.preferredHWFrames
-        )
+        // 1) Use a conservative tap buffer. Earlier builds forced the HAL input
+        //    device to 256 frames for visualizer latency, but some devices then
+        //    opened successfully without ever delivering AVAudioEngine tap
+        //    buffers. Dictation correctness beats sub-10ms visual latency.
+        let tapFrames = Self.preferredTapFrames
 
         // 2) Build a fresh engine and the rest of the graph.  Keep
         //    everything in locals until we know we can start — that way a
@@ -152,7 +154,7 @@ final class AudioRecorder {
         }
 
         log.info(
-            "starting capture: \(inputFormat.sampleRate, privacy: .public) Hz, \(inputFormat.channelCount) ch, hwBuffer=\(hwFrames) frames"
+            "starting capture: \(inputFormat.sampleRate, privacy: .public) Hz, \(inputFormat.channelCount) ch, tapBuffer=\(tapFrames) frames"
         )
 
         // 3) Commit the graph to `self` *before* installing the tap.  The
@@ -164,9 +166,9 @@ final class AudioRecorder {
         self.converter = newConverter
         self.targetFormat = target
 
-        // 4) Match the tap's bufferSize to the hardware buffer so
-        //    AVAudioEngine doesn't accumulate behind the scenes.
-        input.installTap(onBus: 0, bufferSize: hwFrames, format: inputFormat) { [weak self] inputBuf, _ in
+        // 4) Install the tap. The buffer size is a request, not a hard realtime
+        //    guarantee; AVAudioEngine may choose a device-appropriate cadence.
+        input.installTap(onBus: 0, bufferSize: tapFrames, format: inputFormat) { [weak self] inputBuf, _ in
             self?.process(inputBuf)
         }
 

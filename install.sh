@@ -66,8 +66,14 @@ echo "==> Building subshout.app..."
 
 echo "==> Installing to /Applications..."
 # If a previous subshout is running, ask it to quit so we can replace it.
+# LSUIElement apps do not always answer AppleScript reliably, so fall back to
+# terminating the process by executable name before copying the new bundle.
 osascript -e 'tell application "subshout" to quit' 2>/dev/null || true
 sleep 1
+if pgrep -x SubShout >/dev/null 2>&1; then
+    pkill -x SubShout 2>/dev/null || true
+    sleep 1
+fi
 rm -rf -- "${DEST:?}"
 cp -R "$REPO/build/$APP_NAME" "$DEST"
 
