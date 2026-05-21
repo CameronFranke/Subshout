@@ -15,6 +15,42 @@ subshout is a native macOS menu-bar dictation app for Apple Silicon:
 The old Phase 0–11 planning docs were consolidated here. This file is now the
 single project status / TODO document; README.md is for end users.
 
+## Handoff summary
+
+This is **ready for another developer / agent thread to pick up**, and ready for
+clone-and-run testing by a Mac user who is comfortable granting macOS privacy
+permissions manually. It is **not polished public-release software yet**.
+
+Known-good as of this handoff:
+
+- Repo is pushed to `https://github.com/CameronFranke/Subshout`.
+- `main` and `origin/main` are in sync.
+- `./install.sh` builds, installs, ad-hoc signs, launches, and opens the Input
+  Monitoring settings pane.
+- Manual macOS permissions are still required:
+  - Microphone for recording;
+  - Input Monitoring for the global hotkey;
+  - Accessibility for synthetic paste.
+- Hotkey → record → transcribe → paste has been verified locally.
+- Built-in Mac mic works.
+- Bose QC35 II Bluetooth headset path works after switching capture from
+  `AVAudioEngine` to `AVCaptureSession` and starting/stopping capture off the
+  main actor.
+
+Important caveats:
+
+- The waveform / pill visualization still needs tuning. It currently feels
+  jumpy / slightly behind and is intentionally left for a follow-up pass.
+- There is extra diagnostic logging from the install/hotkey/audio debugging
+  session. Keep it while stabilizing handoff; trim before a public release.
+- `swift test` has not been run on this local machine because it only has Xcode
+  Command Line Tools. Full Xcode or CI should run XCTest.
+- This is not notarized and does not ship as a DMG. The supported install path
+  is still `git clone && ./install.sh`.
+- macOS permissions cannot be granted automatically. The installer can only
+  open the relevant pane and the app can prompt/status-check; the user must
+  enable permissions by hand.
+
 ## Implemented
 
 ### App behavior
@@ -23,7 +59,11 @@ single project status / TODO document; README.md is for end users.
 - Default hotkey: double-tap left Option.
 - Hotkey rebinding UI supports modifier double-taps and key combos.
 - Toggle and hold-to-talk trigger modes.
-- Per-recording `AVAudioEngine` lifecycle so the mic releases after each take.
+- Microphone capture via `AVCaptureSession` + `AVCaptureAudioDataOutput`, using
+  mono float32 PCM. This replaced the earlier `AVAudioEngine` tap path because
+  Bluetooth aggregate inputs could start without delivering tap buffers.
+- Capture session start/stop happens off the main actor so slow Bluetooth route
+  setup/teardown does not freeze the menu-bar app.
 - Live floating level pill with spectrum bars and resettable position.
 - Start/stop sounds using system Tink/Pop sounds.
 - Pasteboard write + synthetic ⌘V paste, with auto-paste skipped when subshout
@@ -71,28 +111,39 @@ Current local notes:
 
 - `uv run pytest -m 'not integration'` passes.
 - `swift build --product SubShout` passes with Command Line Tools.
-- `./install.sh --no-launch` builds the daemon bundle, builds release app,
-  installs to `/Applications`, ad-hoc signs, and verifies after running the
-  bundled daemon `--version`.
+- `bash -n install.sh uninstall.sh scripts/*.sh` passes.
+- `./install.sh` has been run repeatedly and successfully on this machine.
 - `swift test` requires full Xcode/XCTest. Local CLT-only environments fail with
   `no such module 'XCTest'`; CI/full Xcode should run it.
-- The final hardware smoke test is still required after launching the installed
-  app: grant Mic/Accessibility → record → transcribe → paste → quit/relaunch.
+- Local hardware smoke currently passes: grant Mic / Input Monitoring /
+  Accessibility → hotkey record → transcribe → paste.
 
-## Before v0.1.0
+## Before calling this public-release-ready
 
-1. Launch `/Applications/subshout.app` and verify model download, Mic /
-   Accessibility prompts, recording, paste, and login-item toggle.
-2. Verify Swift tests on a full-Xcode machine or in CI.
-3. Push to `git@github.com:CameronFranke/Subshout.git`.
-4. Configure GitHub branch protection for `main`:
+1. Run `cd mac && swift test --parallel` on a full-Xcode machine or verify the
+   GitHub Actions Swift test job is green.
+2. Tune the waveform / pill visualization:
+   - reduce perceived latency;
+   - reduce jumpiness;
+   - keep it responsive without over-normalizing background noise.
+3. Reduce debug logging added during the hotkey/audio stabilization pass. Keep
+   useful failure logs, but remove noisy per-recording instrumentation if the
+   capture path remains stable.
+4. Test the install path on another clean macOS user account or a second Mac:
+   - fresh clone;
+   - `./install.sh`;
+   - grant Microphone / Input Monitoring / Accessibility;
+   - record with built-in mic;
+   - record with Bluetooth headset if available;
+   - verify paste into a normal editor.
+5. Configure GitHub branch protection for `main`:
    - require PR before merge;
    - require 1 approval;
    - require CI status checks;
    - block force pushes and branch deletion.
-5. Optional: add `.github/CODEOWNERS` with `* @CameronFranke` if you want every
-   PR to request you explicitly.
-6. Tag the first release after the install/hardware smoke test passes:
+6. Optional: add `.github/CODEOWNERS` with `* @CameronFranke` if every PR should
+   request Cameron explicitly.
+7. Tag the first release only after the above is green:
    `git tag v0.1.0 && git push origin main --tags`.
 
 ## Deferred / intentionally skipped
@@ -119,10 +170,13 @@ Current local notes:
 
 - macOS Unix socket paths are short. Tests use `/tmp/subshout-test-*` paths so
   server tests do not skip under long pytest temp directories.
-- `AVAudioEngine.stop()` alone does not release the mic; the recorder must drop
-  the engine/converter/format objects between recordings.
 - Input Monitoring is required for the global event tap; Accessibility is
-  required for synthetic paste.
+  required for synthetic paste. Microphone is separate.
+- The installer cannot grant privacy permissions automatically. It can open the
+  settings pane and print instructions only.
+- Local unsigned/ad-hoc-signed app rebuilds can confuse TCC if the code identity
+  changes. `install.sh` signs with an explicit designated requirement to keep
+  permission identity stable across local rebuilds.
 - The system Globe/Fn key is reserved by macOS and is rejected by the hotkey
   recorder.
 - Audio sent to the daemon must be little-endian float32 mono PCM, 16 kHz.
