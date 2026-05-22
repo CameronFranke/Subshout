@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreGraphics
 import SwiftUI
 
 /// The floating recording-indicator pill.
@@ -14,12 +15,17 @@ import SwiftUI
 /// The pill accepts mouse events (`ignoresMouseEvents = false`) so the
 /// user can drag it.  `NSHostingView` swallows the mousedown by default,
 /// so we use a tiny subclass (`DragHostingView`) that returns `true` from
-/// `mouseDownCanMoveWindow`.  The window's origin is persisted to
-/// `UserDefaults` and restored on next show.  If the saved position is
-/// off all current screens (monitor unplugged, resolution change), we
-/// fall back to default bottom-center placement.
+/// `mouseDownCanMoveWindow`.  The window's position is persisted as a
+/// relative coordinate inside the current screen's visible frame, then
+/// re-applied to whichever screen/Space is active the next time the pill
+/// appears.  If the saved position is invalid, we fall back to default
+/// bottom-center placement.
 final class PillWindowController: NSObject {
-    private static let originDefaultsKey = "subshout.pillOrigin"
+    private static let placementDefaultsKey = "subshout.pillPlacement"
+    private static let legacyOriginDefaultsKey = "subshout.pillOrigin"
+    private static let activeWorkspaceCollectionBehavior: NSWindow.CollectionBehavior = [
+        .moveToActiveSpace, .ignoresCycle, .fullScreenAuxiliary,
+    ]
 
     private var window: NSWindow?
     private let levels = LevelStore()
@@ -36,6 +42,7 @@ final class PillWindowController: NSObject {
         guard let w = window else { return }
         w.alphaValue = 0
         applyPosition(w)
+        w.collectionBehavior = Self.activeWorkspaceCollectionBehavior
         w.orderFrontRegardless()
         levels.reset()
         NSAnimationContext.runAnimationGroup { ctx in
@@ -56,7 +63,8 @@ final class PillWindowController: NSObject {
 
     /// Drop any saved position so the pill snaps back to default.
     func resetPosition() {
-        UserDefaults.standard.removeObject(forKey: Self.originDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: Self.placementDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: Self.legacyOriginDefaultsKey)
         if let w = window { applyPosition(w) }
     }
 
@@ -86,9 +94,11 @@ final class PillWindowController: NSObject {
         w.backgroundColor = .clear
         w.hasShadow = false
         w.level = .statusBar
-        w.collectionBehavior = [
-            .canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary,
-        ]
+        // Avoid `canJoinAllSpaces` / `stationary`: for a hidden menu-bar-agent
+        // window those can leave the next show tied to the Space/display where
+        // AppKit first associated it.  `moveToActiveSpace` re-homes each show
+        // into the currently active Space instead.
+        w.collectionBehavior = Self.activeWorkspaceCollectionBehavior
         w.ignoresMouseEvents = false
         w.isMovableByWindowBackground = true
         w.isReleasedWhenClosed = false
@@ -107,47 +117,214 @@ final class PillWindowController: NSObject {
     // MARK: - Position
 
     private func applyPosition(_ w: NSWindow) {
-        if let pos = loadSavedPosition(),
-           Self.isOnAnyScreen(point: pos, size: w.frame.size)
-        {
-            w.setFrameOrigin(pos)
+        guard let screen = Self.activeScreen() else { return }
+        if let placement = loadSavedPlacement(windowSize: w.frame.size) {
+            w.setFrameOrigin(
+                placement.origin(
+                    windowSize: w.frame.size,
+                    screenVisibleFrame: screen.visibleFrame
+                )
+            )
             return
         }
-        positionAtBottomCenter(w)
+        positionAtBottomCenter(w, on: screen)
     }
 
-    private func positionAtBottomCenter(_ w: NSWindow) {
-        guard let screen = NSScreen.main else { return }
+    private func positionAtBottomCenter(_ w: NSWindow, on screen: NSScreen) {
         let v = screen.visibleFrame
-        let x = v.midX - w.frame.width / 2
-        let y = v.minY + 80
-        w.setFrameOrigin(NSPoint(x: x, y: y))
-    }
-
-    private func savePosition(_ w: NSWindow) {
-        let origin = w.frame.origin
-        UserDefaults.standard.set(
-            ["x": Double(origin.x), "y": Double(origin.y)],
-            forKey: Self.originDefaultsKey
+        let origin = NSPoint(x: v.midX - w.frame.width / 2, y: v.minY + 80)
+        w.setFrameOrigin(
+            PillPlacement.clampedOrigin(
+                origin,
+                windowSize: w.frame.size,
+                screenVisibleFrame: v
+            )
         )
     }
 
-    private func loadSavedPosition() -> NSPoint? {
-        guard let dict = UserDefaults.standard.dictionary(forKey: Self.originDefaultsKey),
-              let x = dict["x"] as? Double,
-              let y = dict["y"] as? Double
+    private func savePosition(_ w: NSWindow) {
+        guard let screen = Self.bestScreen(for: w.frame) else { return }
+        let placement = PillPlacement(
+            windowFrame: w.frame,
+            screenVisibleFrame: screen.visibleFrame
+        )
+        UserDefaults.standard.set(
+            [
+                "xRatio": Double(placement.xRatio),
+                "yRatio": Double(placement.yRatio),
+            ],
+            forKey: Self.placementDefaultsKey
+        )
+        UserDefaults.standard.removeObject(forKey: Self.legacyOriginDefaultsKey)
+    }
+
+    private func loadSavedPlacement(windowSize: NSSize) -> PillPlacement? {
+        if let dict = UserDefaults.standard.dictionary(forKey: Self.placementDefaultsKey),
+           let xRatio = Self.doubleValue(dict["xRatio"]),
+           let yRatio = Self.doubleValue(dict["yRatio"])
+        {
+            return PillPlacement(xRatio: CGFloat(xRatio), yRatio: CGFloat(yRatio))
+        }
+
+        guard let legacyOrigin = loadLegacyOrigin() else { return nil }
+        let legacyFrame = NSRect(origin: legacyOrigin, size: windowSize)
+        guard let screen = Self.bestScreen(for: legacyFrame) else { return nil }
+        return PillPlacement(windowFrame: legacyFrame, screenVisibleFrame: screen.visibleFrame)
+    }
+
+    private func loadLegacyOrigin() -> NSPoint? {
+        guard let dict = UserDefaults.standard.dictionary(forKey: Self.legacyOriginDefaultsKey),
+              let x = Self.doubleValue(dict["x"]),
+              let y = Self.doubleValue(dict["y"])
         else { return nil }
         return NSPoint(x: x, y: y)
     }
 
-    private static func isOnAnyScreen(point: NSPoint, size: NSSize) -> Bool {
-        let rect = NSRect(origin: point, size: size)
-        for screen in NSScreen.screens {
-            if screen.frame.intersection(rect).equalTo(rect) {
-                return true
+    private static func activeScreen() -> NSScreen? {
+        // Prefer the display containing the frontmost app's active window; that
+        // is the display whose Space should receive the pill.  If the active app
+        // has no normal window, fall back to the mouse because this menu-bar
+        // agent usually has no key window of its own.
+        if let frontmostScreen = frontmostApplicationScreen() {
+            return frontmostScreen
+        }
+        if let mouseScreen = screen(containing: NSEvent.mouseLocation) {
+            return mouseScreen
+        }
+        return NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private static func frontmostApplicationScreen() -> NSScreen? {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let windowInfo = CGWindowListCopyWindowInfo(
+                  [.optionOnScreenOnly, .excludeDesktopElements],
+                  kCGNullWindowID
+              ) as? [[String: Any]]
+        else { return nil }
+
+        for info in windowInfo {
+            guard let ownerPID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  ownerPID == pid,
+                  let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
+                  layer == 0,
+                  let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict)
+            else { continue }
+            guard bounds.width > 1, bounds.height > 1 else { continue }
+            if let screen = bestScreen(forWindowBounds: bounds) {
+                return screen
             }
         }
-        return false
+        return nil
+    }
+
+    private static func bestScreen(forWindowBounds bounds: CGRect) -> NSScreen? {
+        var bestScreen: NSScreen?
+        var bestArea: CGFloat = 0
+        for screen in NSScreen.screens {
+            guard let screenNumber = screen.deviceDescription[
+                NSDeviceDescriptionKey("NSScreenNumber")
+            ] as? NSNumber else { continue }
+            let displayBounds = CGDisplayBounds(CGDirectDisplayID(screenNumber.uint32Value))
+            let overlap = displayBounds.intersection(bounds)
+            guard !overlap.isNull, !overlap.isEmpty else { continue }
+            let area = overlap.width * overlap.height
+            if area > bestArea {
+                bestArea = area
+                bestScreen = screen
+            }
+        }
+        return bestScreen
+    }
+
+    private static func bestScreen(for rect: NSRect) -> NSScreen? {
+        var bestScreen: NSScreen?
+        var bestArea: CGFloat = 0
+        for screen in NSScreen.screens {
+            let overlap = screen.frame.intersection(rect)
+            guard !overlap.isNull, !overlap.isEmpty else { continue }
+            let area = overlap.width * overlap.height
+            if area > bestArea {
+                bestArea = area
+                bestScreen = screen
+            }
+        }
+        if let bestScreen { return bestScreen }
+        return screen(containing: rect.origin)
+    }
+
+    private static func screen(containing point: NSPoint) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(point) }
+    }
+
+    private static func doubleValue(_ value: Any?) -> Double? {
+        if let value = value as? Double { return value }
+        if let value = value as? NSNumber { return value.doubleValue }
+        return nil
+    }
+}
+
+// MARK: - Relative pill placement
+
+struct PillPlacement: Equatable {
+    let xRatio: CGFloat
+    let yRatio: CGFloat
+
+    init(xRatio: CGFloat, yRatio: CGFloat) {
+        self.xRatio = Self.clamp01(xRatio)
+        self.yRatio = Self.clamp01(yRatio)
+    }
+
+    init(windowFrame: NSRect, screenVisibleFrame: NSRect) {
+        let xTravel = max(screenVisibleFrame.width - windowFrame.width, 0)
+        let yTravel = max(screenVisibleFrame.height - windowFrame.height, 0)
+        let xRatio = xTravel > 0
+            ? (windowFrame.minX - screenVisibleFrame.minX) / xTravel
+            : 0.5
+        let yRatio = yTravel > 0
+            ? (windowFrame.minY - screenVisibleFrame.minY) / yTravel
+            : 0
+        self.init(xRatio: xRatio, yRatio: yRatio)
+    }
+
+    func origin(windowSize: NSSize, screenVisibleFrame: NSRect) -> NSPoint {
+        let xTravel = max(screenVisibleFrame.width - windowSize.width, 0)
+        let yTravel = max(screenVisibleFrame.height - windowSize.height, 0)
+        let origin = NSPoint(
+            x: screenVisibleFrame.minX + xTravel * xRatio,
+            y: screenVisibleFrame.minY + yTravel * yRatio
+        )
+        return Self.clampedOrigin(
+            origin,
+            windowSize: windowSize,
+            screenVisibleFrame: screenVisibleFrame
+        )
+    }
+
+    static func clampedOrigin(
+        _ origin: NSPoint,
+        windowSize: NSSize,
+        screenVisibleFrame: NSRect
+    ) -> NSPoint {
+        let maxX = max(screenVisibleFrame.minX, screenVisibleFrame.maxX - windowSize.width)
+        let maxY = max(screenVisibleFrame.minY, screenVisibleFrame.maxY - windowSize.height)
+        return NSPoint(
+            x: clamp(origin.x, lowerBound: screenVisibleFrame.minX, upperBound: maxX),
+            y: clamp(origin.y, lowerBound: screenVisibleFrame.minY, upperBound: maxY)
+        )
+    }
+
+    private static func clamp01(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return 0 }
+        return clamp(value, lowerBound: 0, upperBound: 1)
+    }
+
+    private static func clamp(
+        _ value: CGFloat,
+        lowerBound: CGFloat,
+        upperBound: CGFloat
+    ) -> CGFloat {
+        min(max(value, lowerBound), upperBound)
     }
 }
 
