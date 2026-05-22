@@ -28,7 +28,7 @@ import Foundation
 ///
 ///   * fftSize     = 512   →  32 ms analysis window @ 16 kHz
 ///   * hopSize     = 256   →  ~62 Hz update rate (16 ms between callbacks)
-///   * temporalEMA = 0.35  →  ~3-frame visible decay (~50 ms)
+///   * temporalEMA = 0.50  →  ~4-frame visible decay (~70 ms)
 ///
 /// Thread safety: every call to `push` / `reset` and the resulting
 /// `output` callback fires on whatever thread invokes `push`.  In subshout
@@ -52,10 +52,10 @@ final class FrequencyAnalyzer {
     static let sampleRate: Double = 16_000
 
     /// Smoothing constant per band, frame-to-frame.  Higher = stickier.
-    /// At 62 Hz update rate, 0.35 means the meter is ~99% caught up after
-    /// 4–5 frames (~70 ms) — visibly less jumpy than 0.20 without feeling
-    /// laggy when you snap.
-    private static let temporalEMA: Float = 0.35
+    /// At 62 Hz update rate, 0.50 means the meter is ~99% caught up after
+    /// 7 frames (~110 ms) — smoother than the original 0.35 without making
+    /// the visualizer feel floaty.
+    private static let temporalEMA: Float = 0.50
 
     /// AGC: a running-max magnitude is decayed by this factor every frame.
     /// At 62 Hz, 0.9985^310 ≈ 0.63, so a peak fades to ~63% over 5 s.
