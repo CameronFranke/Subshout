@@ -248,16 +248,16 @@ private struct ModelTab: View {
     @EnvironmentObject var settings: AppSettings
 
     private let curated: [(id: String, label: String)] = [
+        ("mlx-community/parakeet-tdt_ctc-110m",
+         "parakeet-tdt_ctc-110m — low memory default (fastest, lower accuracy)"),
         ("mlx-community/parakeet-tdt-0.6b-v2",
-         "parakeet-tdt-0.6b-v2 — recommended (English, ~600M)"),
+         "parakeet-tdt-0.6b-v2 — higher accuracy (English, ~600M)"),
         ("mlx-community/parakeet-tdt-0.6b-v3",
          "parakeet-tdt-0.6b-v3 — multilingual ~600M"),
         ("mlx-community/parakeet-tdt-1.1b",
          "parakeet-tdt-1.1b — larger English ~1.1B"),
         ("mlx-community/parakeet-rnnt-1.1b",
          "parakeet-rnnt-1.1b — RNN-T English ~1.1B"),
-        ("mlx-community/parakeet-tdt_ctc-110m",
-         "parakeet-tdt_ctc-110m — tiny, fastest"),
     ]
 
     var body: some View {
@@ -271,7 +271,7 @@ private struct ModelTab: View {
             .labelsHidden()
             .pickerStyle(.menu)
 
-            Text("Changing the model restarts the daemon. Models are downloaded the first time they're used.")
+            Text("Changing the model restarts the daemon. The low-memory model is the default; larger models use substantially more unified memory.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 

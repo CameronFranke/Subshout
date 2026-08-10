@@ -40,8 +40,9 @@ model weights from `~/.cache/huggingface`.
 - Apple Silicon Mac (M1 or newer)
 - Xcode command-line tools (`xcode-select --install`)
 - [`uv`](https://github.com/astral-sh/uv)
-- Disk space: roughly 1.5–2 GB for the bundled app plus ~1.2 GB for model
-  weights downloaded on first model load
+- Disk space: roughly 1.5–2 GB for the bundled app plus model weights
+  downloaded on first model load (the low-memory default is much smaller than
+  the optional 0.6B/1.1B models)
 
 ## What it does
 
@@ -50,9 +51,11 @@ captures microphone audio, transcribes it locally with NVIDIA Parakeet via
 [`parakeet-mlx`](https://github.com/senstella/parakeet-mlx), writes the text to
 the clipboard, and posts ⌘V into the frontmost app.
 
-Default trigger mode is **toggle**. Settings also support **hold-to-talk**,
-custom hotkeys, model selection, start/stop sounds, login-item control, and
-resetting the floating level pill position.
+Default trigger mode is **toggle**. The default transcription model is the
+low-memory 110M option; the 0.6B and 1.1B models trade substantially more
+unified memory for accuracy. Settings also support **hold-to-talk**, custom
+hotkeys, model selection, start/stop sounds, login-item control, and resetting
+the floating level pill position.
 
 ## Permissions
 

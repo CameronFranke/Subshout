@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import numpy as np
@@ -26,7 +27,7 @@ from .models import MODELS
 from .server import DAEMON_VERSION, run
 
 
-DEFAULT_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
+DEFAULT_MODEL = "mlx-community/parakeet-tdt_ctc-110m"
 DEFAULT_SOCKET = Path.home() / "Library/Application Support/subshout/daemon.sock"
 DEFAULT_LOG_FILE = Path.home() / "Library/Logs/subshout/daemon.log"
 
@@ -56,7 +57,11 @@ def _configure_logging(log_file: Path | None, verbose: bool) -> None:
     handlers: list[logging.Handler] = []
     if log_file is not None:
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(log_file, mode="a", encoding="utf-8"))
+        handlers.append(
+            RotatingFileHandler(
+                log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+            )
+        )
     else:
         handlers.append(logging.StreamHandler(sys.stderr))
     logging.basicConfig(level=level, format=fmt, handlers=handlers, force=True)

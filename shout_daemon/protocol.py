@@ -57,10 +57,11 @@ _HEADER_LEN_FMT = ">I"
 _HEADER_LEN_BYTES = 4
 
 # Sanity caps. The header is only metadata, so 1 MiB is preposterously large
-# but still cheap to validate. The payload cap is 1 GiB (~6 hours of float32
-# 16 kHz mono); real dictation will be a few MB at most.
+# but still cheap to validate. The payload cap is 32 MiB (~8.7 minutes of
+# float32 16 kHz mono), comfortably above the app's five-minute recording cap
+# while preventing an IPC peer from exhausting unified memory.
 MAX_HEADER_BYTES = 1 << 20
-MAX_PAYLOAD_BYTES = 1 << 30
+MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
 
 
 class ProtocolError(Exception):

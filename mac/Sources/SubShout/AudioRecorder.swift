@@ -15,6 +15,10 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private let log = Logger(subsystem: "com.cameronfranke.SubShout", category: "AudioRecorder")
 
     static let targetSampleRate: Double = 16_000
+    static let maximumRecordingSeconds: Double = 300
+    private static let maximumSampleCount = Int(
+        targetSampleRate * maximumRecordingSeconds
+    )
 
     private var session: AVCaptureSession?
     private var audioOutput: AVCaptureAudioDataOutput?
@@ -28,6 +32,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private var sampleCount = 0
     private var peakLevel: Float = 0
     private var loggedFirstBuffer = false
+    private var didReachRecordingLimit = false
 
     /// True iff a recording is in progress.
     var isRunning: Bool { session?.isRunning == true }
@@ -36,6 +41,10 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     /// Length = `FrequencyAnalyzer.bandCount` (currently 21). Each element is
     /// in `[0, 1]`.
     var bandsHandler: (([Float]) -> Void)?
+
+    /// Called once when a take reaches the hard PCM limit. The receiver must
+    /// stop capture; the audio callback itself must not block on session I/O.
+    var recordingLimitHandler: (() -> Void)?
 
     deinit {
         if session != nil {
@@ -101,6 +110,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         sampleCount = 0
         peakLevel = 0
         loggedFirstBuffer = false
+        didReachRecordingLimit = false
         lock.unlock()
 
         analyzer.reset()
@@ -233,17 +243,31 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private func append(samples: UnsafePointer<Float>, count: Int) {
         guard count > 0 else { return }
 
-        analyzer.push(samples, count: count)
-
         lock.lock()
-        inputBufferCount += 1
-        sampleCount += count
-        pcmBuffer.reserveCapacity(pcmBuffer.count + count)
-        for i in 0..<count {
-            let sample = samples[i]
-            pcmBuffer.append(sample)
-            peakLevel = max(peakLevel, abs(sample))
+        let remaining = Self.maximumSampleCount - pcmBuffer.count
+        let acceptedCount = max(0, min(count, remaining))
+        let hitLimit = acceptedCount < count || pcmBuffer.count + acceptedCount == Self.maximumSampleCount
+        let reachedLimit = hitLimit && !didReachRecordingLimit
+        if reachedLimit {
+            didReachRecordingLimit = true
+        }
+        if acceptedCount > 0 {
+            inputBufferCount += 1
+            sampleCount += acceptedCount
+            pcmBuffer.reserveCapacity(pcmBuffer.count + acceptedCount)
+            for i in 0..<acceptedCount {
+                let sample = samples[i]
+                pcmBuffer.append(sample)
+                peakLevel = max(peakLevel, abs(sample))
+            }
         }
         lock.unlock()
+
+        if acceptedCount > 0 {
+            analyzer.push(samples, count: acceptedCount)
+        }
+        if reachedLimit {
+            recordingLimitHandler?()
+        }
     }
 }

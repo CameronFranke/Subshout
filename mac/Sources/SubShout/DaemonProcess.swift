@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OSLog
 
@@ -75,6 +76,31 @@ final class DaemonProcess {
             p.terminate()
         }
         process = nil
+    }
+
+    /// Terminate the daemon and wait for its model allocations to disappear.
+    /// A timed-out Python/MLX load is force-killed so a replacement cannot
+    /// overlap it and double the app's unified-memory footprint.
+    func terminateAndWait(timeoutSeconds: TimeInterval = 10) async {
+        guard let p = process else { return }
+        if p.isRunning {
+            p.terminate()
+        }
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while p.isRunning && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        if p.isRunning {
+            log.warning("daemon did not exit within \(timeoutSeconds)s; force-killing pid \(p.processIdentifier)")
+            Darwin.kill(p.processIdentifier, SIGKILL)
+            while p.isRunning {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        if process === p {
+            process = nil
+        }
     }
 
     deinit { terminate() }

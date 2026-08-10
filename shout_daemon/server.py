@@ -280,6 +280,7 @@ class DaemonServer:
             None, self.asr.load, model_id
         )
         await self._warmup()
+        self._log_mlx_memory("model load")
         return {
             "type": "ok",
             "model_id": model_id,
@@ -325,12 +326,23 @@ class DaemonServer:
             result.audio_seconds,
             result.transcribe_seconds,
         )
+        self._log_mlx_memory("transcription")
         return {
             "type": "ok",
             "text": result.text,
             "audio_seconds": float(result.audio_seconds),
             "transcribe_seconds": float(result.transcribe_seconds),
         }
+
+    def _log_mlx_memory(self, operation: str) -> None:
+        active, cached, peak = self.asr.memory_state()
+        log.info(
+            "mlx memory after %s: active_mb=%.1f cached_mb=%.1f peak_mb=%.1f",
+            operation,
+            active / (1024 * 1024),
+            cached / (1024 * 1024),
+            peak / (1024 * 1024),
+        )
 
     def _do_status(self) -> dict:
         return {

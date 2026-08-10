@@ -68,7 +68,7 @@ final class AppSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.modelID = defaults.string(forKey: Keys.modelID)
-            ?? "mlx-community/parakeet-tdt-0.6b-v2"
+            ?? "mlx-community/parakeet-tdt_ctc-110m"
         self.triggerMode = TriggerMode(
             rawValue: defaults.string(forKey: Keys.triggerMode) ?? ""
         ) ?? .toggle

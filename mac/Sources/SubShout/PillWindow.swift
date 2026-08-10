@@ -30,11 +30,30 @@ final class PillWindowController: NSObject {
     private var window: NSWindow?
     private let levels = LevelStore()
     private var moveObserver: NSObjectProtocol?
+    private let bandsLock = NSLock()
+    private var pendingBands: [Float] = []
+    private var hasScheduledBandUpdate = false
 
     /// Push the latest spectrum frame.  Safe from any thread.  Length should
     /// match `LevelStore.barCount`; mismatched arrays are padded/trimmed.
     func setBands(_ bands: [Float]) {
-        DispatchQueue.main.async { [levels] in levels.set(bands) }
+        bandsLock.lock()
+        pendingBands = bands
+        guard !hasScheduledBandUpdate else {
+            bandsLock.unlock()
+            return
+        }
+        hasScheduledBandUpdate = true
+        bandsLock.unlock()
+
+        DispatchQueue.main.async { [weak self, levels] in
+            guard let self else { return }
+            self.bandsLock.lock()
+            let latestBands = self.pendingBands
+            self.hasScheduledBandUpdate = false
+            self.bandsLock.unlock()
+            levels.set(latestBands)
+        }
     }
 
     func show() {

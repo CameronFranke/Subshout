@@ -15,11 +15,11 @@ class ModelInfo:
 MODELS: list[ModelInfo] = [
     ModelInfo(
         hf_id="mlx-community/parakeet-tdt-0.6b-v2",
-        label="parakeet-tdt-0.6b-v2  (recommended, English, ~600M)",
+        label="parakeet-tdt-0.6b-v2  (higher accuracy, English, ~600M)",
         description=(
             "NVIDIA Parakeet TDT 0.6B v2. English-only. Top of the OpenASR "
-            "leaderboard for its size class. Best speed/quality tradeoff. "
-            "Default choice."
+            "leaderboard for its size class. Best speed/quality tradeoff, "
+            "but uses substantially more unified memory than the default."
         ),
     ),
     ModelInfo(
@@ -48,11 +48,11 @@ MODELS: list[ModelInfo] = [
     ),
     ModelInfo(
         hf_id="mlx-community/parakeet-tdt_ctc-110m",
-        label="parakeet-tdt_ctc-110m  (tiny, fastest, English)",
+        label="parakeet-tdt_ctc-110m  (low-memory default, fastest, English)",
         description=(
             "Tiny 110M hybrid TDT/CTC. Extremely fast and low memory, but "
-            "noticeably worse WER. Good for ultra-short utterances or "
-            "low-power scenarios."
+            "noticeably worse WER. Default choice to keep memory use safe; "
+            "choose a larger model when accuracy is more important."
         ),
     ),
 ]

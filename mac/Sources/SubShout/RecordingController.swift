@@ -57,6 +57,13 @@ final class RecordingController: ObservableObject {
         recorder.bandsHandler = { [pill] bands in
             pill.setBands(bands)
         }
+        recorder.recordingLimitHandler = { [weak self] in
+            Task { @MainActor in
+                guard let self, self.state == .recording else { return }
+                self.log.warning("recording reached five-minute PCM limit")
+                self.endRecording()
+            }
+        }
         hotkeys.trigger = settings.trigger.asTrigger
         hotkeys.onActivate = { [weak self] in
             Task { @MainActor in self?.handleActivate() }
@@ -136,13 +143,15 @@ final class RecordingController: ObservableObject {
     func restartDaemon() {
         startupTask?.cancel()
         daemonClient.disconnect()
-        daemonProcess.terminate()
         daemonReady = false
         state = .startingDaemon
         startupTask = Task { [weak self] in
-            // Small delay to let the OS fully release the previous socket.
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            await self?.startDaemonAndPoll()
+            guard let self else { return }
+            // A model process occupies several GB of unified memory. Never
+            // overlap it with its replacement, even while model loading.
+            await self.daemonProcess.terminateAndWait()
+            guard !Task.isCancelled else { return }
+            await self.startDaemonAndPoll()
         }
     }
 

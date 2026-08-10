@@ -28,6 +28,12 @@ from parakeet_mlx.parakeet import BaseParakeet
 
 T = TypeVar("T")
 
+# MLX otherwise retains freed GPU buffers until its allocator reaches its
+# default (very large) cache limit. Keep only a modest cache: dictation runs
+# serially, so reuse beyond the current request is not worth exhausting unified
+# memory.
+_MLX_CACHE_LIMIT_BYTES = 256 * 1024 * 1024
+
 
 @dataclass
 class TranscriptionResult:
@@ -51,6 +57,7 @@ class ParakeetASR:
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="mlx"
         )
+        mx.set_cache_limit(_MLX_CACHE_LIMIT_BYTES)
 
     def _run(self, fn: Callable[[], T]) -> T:
         """Run ``fn`` on the dedicated MLX thread and return its result."""
@@ -68,11 +75,26 @@ class ParakeetASR:
             self.model_id = None
             t0 = time.perf_counter()
             self.model = from_pretrained(hf_id)
+            # Loading starts with the checkpoint's original tensors and casts
+            # them to BF16. Free the original/load-time intermediates now
+            # rather than retaining that high-water allocation indefinitely.
+            mx.clear_cache()
+            mx.reset_peak_memory()
             self.load_seconds = time.perf_counter() - t0
             self.model_id = hf_id
             return self.load_seconds
 
         return self._run(_do_load)
+
+    def memory_state(self) -> tuple[int, int, int]:
+        """Return MLX active, cached, and peak bytes from the MLX thread."""
+        return self._run(
+            lambda: (
+                mx.get_active_memory(),
+                mx.get_cache_memory(),
+                mx.get_peak_memory(),
+            )
+        )
 
     def transcribe_array(
         self, audio: np.ndarray, sample_rate: int = 16_000
@@ -96,6 +118,10 @@ class ParakeetASR:
             mel = get_logmel(x, self.model.preprocessor_config)
             results = self.model.generate(mel)
             text = results[0].text if results else ""
+            # Only `text` escapes this scope. Return temporary feature and
+            # decoder buffers to the system after each serial request.
+            del results, mel, x
+            mx.clear_cache()
             dt = time.perf_counter() - t0
             return TranscriptionResult(
                 text=text,
