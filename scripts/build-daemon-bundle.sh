@@ -121,21 +121,30 @@ echo "==> installing dependencies into $SITE_PACKAGES"
 rm -rf -- "${SITE_PACKAGES:?}"
 mkdir -p "$SITE_PACKAGES"
 
-# Install:
-#   * parakeet-mlx (and its transitive deps: mlx, numpy, huggingface-hub, ...)
-#   * the local `shout-daemon` package itself (so `python -m shout_daemon` works)
+# Install the locked runtime dependency set, then the local `shout-daemon`
+# package.  Resolving the broad constraints here used to pick parakeet-mlx
+# 0.5.2, whose old numba dependency cannot build on the bundled Python 3.12.
 #
 # `--python` pins uv to the bundled interpreter so the wheels installed
-# match its ABI (cp312-cp312-macosx_*_arm64).  `--target` writes everything
+# match its ABI (cp312-cp312-macosx_*_arm64). `--target` writes everything
 # into a flat site-packages dir we can ship.
-( cd "$REPO_ROOT" && uv pip install \
-    --python "$INTERP_BIN" \
-    --target "$SITE_PACKAGES" \
-    --no-cache \
-    "parakeet-mlx>=0.5.1" \
-    "numpy>=2.0" \
-    "soundfile>=0.13.1" \
-    "$REPO_ROOT" )
+REQUIREMENTS_FILE="$(mktemp)"
+trap 'rm -f "$REQUIREMENTS_FILE"' EXIT
+(
+    cd "$REPO_ROOT"
+    uv export --locked --no-dev --no-emit-project --format requirements-txt \
+        > "$REQUIREMENTS_FILE"
+    uv pip install \
+        --python "$INTERP_BIN" \
+        --target "$SITE_PACKAGES" \
+        --no-cache \
+        -r "$REQUIREMENTS_FILE"
+    uv pip install \
+        --python "$INTERP_BIN" \
+        --target "$SITE_PACKAGES" \
+        --no-deps \
+        "$REPO_ROOT"
+)
 
 # ----------------------------------------------------------------- 3) shrink
 
