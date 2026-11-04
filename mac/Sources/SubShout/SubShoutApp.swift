@@ -16,7 +16,7 @@ struct SubShoutApp: App {
                 .environmentObject(delegate.controller)
         }
 
-        // Standard SwiftUI Settings scene; hosts our SettingsView (4 tabs).
+        // Standard SwiftUI Settings scene; hosts our SettingsView.
         Settings {
             SettingsView()
                 .environmentObject(delegate.controller)
@@ -58,6 +58,12 @@ private struct SubShoutMenu: View {
             }
             .keyboardShortcut("r", modifiers: [.command])
             .disabled(!canRecord)
+
+            if let notice = controller.microphoneNotice {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
 
             if case .error(let msg) = controller.state {
                 Divider()

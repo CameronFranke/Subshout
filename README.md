@@ -57,6 +57,12 @@ unified memory for accuracy. Settings also support **hold-to-talk**, custom
 hotkeys, model selection, start/stop sounds, login-item control, and resetting
 the floating level pill position.
 
+Choose an input in **Settings → Microphone**. **System Default** follows your
+Mac's current input; choosing a specific microphone affects only subshout and is
+remembered across launches. Changes apply to the next recording. If the saved
+microphone is disconnected, subshout uses the system default and shows a notice
+in Settings and the menu. Reconnecting it restores the selection on the next take.
+
 ## Permissions
 
 macOS asks for three permissions:

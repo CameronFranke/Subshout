@@ -23,6 +23,11 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Empty means follow the system default; otherwise an AVCaptureDevice uniqueID.
+    @Published var microphoneID: String {
+        didSet { defaults.set(microphoneID, forKey: Keys.microphoneID) }
+    }
+
     @Published var modelID: String {
         didSet { defaults.set(modelID, forKey: Keys.modelID) }
     }
@@ -59,6 +64,7 @@ final class AppSettings: ObservableObject {
     private let defaults: UserDefaults
 
     private enum Keys {
+        static let microphoneID = "subshout.microphoneID"
         static let modelID = "subshout.modelID"
         static let triggerMode = "subshout.triggerMode"
         static let soundsEnabled = "subshout.soundsEnabled"
@@ -67,6 +73,7 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.microphoneID = defaults.string(forKey: Keys.microphoneID) ?? ""
         self.modelID = defaults.string(forKey: Keys.modelID)
             ?? "mlx-community/parakeet-tdt_ctc-110m"
         self.triggerMode = TriggerMode(
