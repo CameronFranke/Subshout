@@ -285,10 +285,16 @@ private struct MicrophoneTab: View {
             Spacer()
         }
         .onAppear(perform: refreshDevices)
-        .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)) { _ in
+        // Raw notification names are stable across SDKs; their Swift symbols
+        // were renamed in newer SDKs and are unavailable on older build hosts.
+        .onReceive(NotificationCenter.default.publisher(
+            for: Notification.Name("AVCaptureDeviceWasConnectedNotification")
+        )) { _ in
             refreshDevices()
         }
-        .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasDisconnectedNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(
+            for: Notification.Name("AVCaptureDeviceWasDisconnectedNotification")
+        )) { _ in
             refreshDevices()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
