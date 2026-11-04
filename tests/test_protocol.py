@@ -15,6 +15,7 @@ from shout_daemon.protocol import (
     Message,
     ProtocolError,
     encode_message,
+    normalize_vocabulary,
     read_message_async,
     read_message_sync,
 )
@@ -31,6 +32,30 @@ def _reader_for(buf: bytes):
         return out
 
     return _read
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, "word", {}, [1], [None], [True], [""], [" \t\n"],
+     ["bad\x00word"], ["bad\x7fword"], ["bad\u200bword"], ["\ud800"],
+     ["a" * 257], ["é" * 129], ["word"] * 129],
+)
+def test_vocabulary_rejects_malformed_or_oversize_entries(value):
+    with pytest.raises(ValueError, match="vocabulary"):
+        normalize_vocabulary(value)
+
+
+def test_vocabulary_normalizes_and_deduplicates():
+    assert normalize_vocabulary([]) == []
+    assert normalize_vocabulary(
+        ["  New\t York\n", "new york", "Straße", "STRASSE", "Café"]
+    ) == ["New York", "Straße", "Café"]
+
+
+def test_vocabulary_accepts_exact_limits_after_normalization():
+    assert len(normalize_vocabulary([str(i) for i in range(128)])) == 128
+    assert normalize_vocabulary(["  " + "é" * 128 + "\n"]) == ["é" * 128]
+    assert normalize_vocabulary(["a" * 256]) == ["a" * 256]
 
 
 # ---------------------------------------------------------------------------- encode

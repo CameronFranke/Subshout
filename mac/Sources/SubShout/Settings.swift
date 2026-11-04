@@ -27,6 +27,15 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(modelID, forKey: Keys.modelID) }
     }
 
+    @Published private(set) var vocabulary: [String] {
+        didSet { defaults.set(vocabulary, forKey: Keys.vocabulary) }
+    }
+
+    /// Commit only complete, validated edits; invalid input leaves saved terms intact.
+    func saveVocabulary(_ entries: [String]) throws {
+        vocabulary = try Vocabulary.normalize(entries)
+    }
+
     @Published var triggerMode: TriggerMode {
         didSet { defaults.set(triggerMode.rawValue, forKey: Keys.triggerMode) }
     }
@@ -60,6 +69,7 @@ final class AppSettings: ObservableObject {
 
     private enum Keys {
         static let modelID = "subshout.modelID"
+        static let vocabulary = "subshout.vocabulary"
         static let triggerMode = "subshout.triggerMode"
         static let soundsEnabled = "subshout.soundsEnabled"
         static let trigger = "subshout.trigger"
@@ -67,6 +77,7 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.vocabulary = defaults.stringArray(forKey: Keys.vocabulary) ?? []
         self.modelID = defaults.string(forKey: Keys.modelID)
             ?? "mlx-community/parakeet-tdt_ctc-110m"
         self.triggerMode = TriggerMode(

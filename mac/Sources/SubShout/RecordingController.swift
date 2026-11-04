@@ -235,11 +235,15 @@ final class RecordingController: ObservableObject {
         // stopped recording.  If yes, only copy — we don't want ⌘V to land
         // in our own Settings window.
         let weAreFront = NSApp.isActive
+        // Value snapshot: later settings edits apply only to later requests.
+        let vocabulary = settings.vocabulary
 
         Task { [weak self, client = daemonClient] in
             do {
                 self?.log.info("sending transcription request: bytes=\(pcm.count, privacy: .public)")
-                let result = try await client.transcribe(pcm: pcm, sampleRate: 16_000)
+                let result = try await client.transcribe(
+                    pcm: pcm, sampleRate: 16_000, vocabulary: vocabulary
+                )
                 await MainActor.run {
                     guard let self = self else { return }
                     self.lastTranscript = result.text

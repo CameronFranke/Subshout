@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// SwiftUI Settings UI.  Tabs: Hotkey, Model, Sounds, About.
+/// SwiftUI Settings UI.  Tabs: Hotkey, Model, Vocabulary, Sounds, About.
 struct SettingsView: View {
     @EnvironmentObject var controller: RecordingController
     @ObservedObject private var settings: AppSettings
@@ -16,6 +16,8 @@ struct SettingsView: View {
                 .environmentObject(settings)
                 .environmentObject(controller)
             ModelTab().tabItem { Label("Model", systemImage: "cpu") }
+                .environmentObject(settings)
+            VocabularyTab().tabItem { Label("Vocabulary", systemImage: "text.book.closed") }
                 .environmentObject(settings)
             SoundsTab().tabItem { Label("Sounds", systemImage: "speaker.wave.2") }
                 .environmentObject(settings)
@@ -276,6 +278,69 @@ private struct ModelTab: View {
                 .foregroundStyle(.secondary)
 
             Spacer()
+        }
+    }
+}
+
+// MARK: - Vocabulary
+
+private struct VocabularyTab: View {
+    @EnvironmentObject var settings: AppSettings
+    @State private var draft = ""
+    @State private var savedDraft: String?
+    @State private var saveError: String?
+
+    private var validation: Result<[String], Error> {
+        Result { try Vocabulary.parse(draft) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Custom vocabulary").font(.headline)
+            Text("Boost names and specialist terms. Enter one word or phrase per line. Saved changes apply to the next transcription without restarting or changing the model.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            TextEditor(text: $draft)
+                .font(.system(.body, design: .monospaced))
+                .border(Color.secondary.opacity(0.4))
+                .accessibilityLabel("Custom vocabulary, one word or phrase per line")
+            Text("Up to 128 unique entries, 256 UTF-8 bytes each. Blank lines are ignored; whitespace and case-insensitive duplicates are normalized on save.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                switch validation {
+                case .success(let entries):
+                    Text(savedDraft == draft ? "Saved · \(entries.count) entries" : "\(entries.count) entries")
+                        .foregroundStyle(.secondary)
+                case .failure(let error):
+                    Text(error.localizedDescription).foregroundStyle(.red)
+                }
+                Spacer()
+                Button("Save") { save() }
+                    .disabled(!canSave)
+            }
+            .font(.callout)
+            if let saveError {
+                Text(saveError).font(.caption).foregroundStyle(.red)
+            }
+        }
+        .onAppear { draft = settings.vocabulary.joined(separator: "\n") }
+        .onChange(of: draft) { _ in saveError = nil }
+    }
+
+    private var canSave: Bool {
+        if case .success = validation { return true }
+        return false
+    }
+
+    private func save() {
+        do {
+            try settings.saveVocabulary(Vocabulary.parse(draft))
+            draft = settings.vocabulary.joined(separator: "\n")
+            savedDraft = draft
+            saveError = nil
+        } catch {
+            saveError = error.localizedDescription
         }
     }
 }

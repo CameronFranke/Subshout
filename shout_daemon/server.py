@@ -34,11 +34,12 @@ from typing import Optional
 
 import numpy as np
 
-from .asr import ParakeetASR
+from .asr import ParakeetASR, UnsupportedVocabularyError
 from .protocol import (
     Message,
     ProtocolError,
     encode_message,
+    normalize_vocabulary,
     read_message_async,
 )
 
@@ -293,6 +294,10 @@ class DaemonServer:
                 "not_loaded",
                 "no model loaded; send 'load_model' first or wait for preload",
             )
+        try:
+            vocabulary = normalize_vocabulary(msg.header.get("vocabulary", []))
+        except ValueError as error:
+            raise _ClientError("bad_request", str(error)) from error
         sr = msg.header.get("sample_rate", 16_000)
         if not isinstance(sr, int) or isinstance(sr, bool) or sr <= 0:
             raise _ClientError("bad_request", f"bad sample_rate: {sr!r}")
@@ -317,9 +322,12 @@ class DaemonServer:
             sr,
             audio.shape[0] / float(sr),
         )
-        result = await asyncio.get_running_loop().run_in_executor(
-            None, self.asr.transcribe_array, audio, sr
-        )
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(
+                None, self.asr.transcribe_array, audio, sr, vocabulary
+            )
+        except UnsupportedVocabularyError as error:
+            raise _ClientError("unsupported_vocabulary", str(error)) from error
         log.info(
             "transcribe complete: text_len=%d audio_seconds=%.3f transcribe_seconds=%.3f",
             len(result.text),

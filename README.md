@@ -57,6 +57,23 @@ unified memory for accuracy. Settings also support **hold-to-talk**, custom
 hotkeys, model selection, start/stop sounds, login-item control, and resetting
 the floating level pill position.
 
+## Custom vocabulary
+
+Open **Settings → Vocabulary**, enter one word or phrase per line, and click
+**Save**. Saved terms are favored during recognition starting with the next
+transcription; no model change or daemon restart is needed. Everything stays
+on-device.
+
+Use this for names, project names, and specialist terms. Up to 128 unique
+entries are supported, each at most 256 UTF-8 bytes. Blank lines are ignored,
+whitespace is normalized, and case-insensitive duplicates are combined.
+Matching is case-insensitive; output spelling and capitalization still depend
+on the model. This is recognition biasing, not automatic text replacement.
+
+Vocabulary uses beam decoding and can increase transcription time or favor an
+incorrect term. Keep the list focused. To return to the original fast decoding,
+clear the list and click **Save**.
+
 ## Permissions
 
 macOS asks for three permissions:

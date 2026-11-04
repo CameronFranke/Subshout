@@ -61,11 +61,23 @@ final class DaemonClient {
         _ = try await call(["type": "load_model", "model_id": modelID])
     }
 
-    func transcribe(pcm: Data, sampleRate: Int = 16_000) async throws -> TranscribeResult {
-        let (h, _) = try await call(
-            ["type": "transcribe", "sample_rate": sampleRate],
-            payload: pcm
-        )
+    /// Keep the empty-vocabulary request identical to older clients.
+    static func transcribeHeader(sampleRate: Int, vocabulary: [String]) throws -> [String: Any] {
+        var header: [String: Any] = ["type": "transcribe", "sample_rate": sampleRate]
+        let normalized = try Vocabulary.normalize(vocabulary)
+        if !normalized.isEmpty {
+            header["vocabulary"] = normalized
+        }
+        return header
+    }
+
+    func transcribe(
+        pcm: Data,
+        sampleRate: Int = 16_000,
+        vocabulary: [String] = []
+    ) async throws -> TranscribeResult {
+        let header = try Self.transcribeHeader(sampleRate: sampleRate, vocabulary: vocabulary)
+        let (h, _) = try await call(header, payload: pcm)
         return TranscribeResult(
             text: (h["text"] as? String) ?? "",
             audioSeconds: (h["audio_seconds"] as? Double) ?? 0,

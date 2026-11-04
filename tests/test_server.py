@@ -16,9 +16,13 @@ import stat
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import Mock
+
+import numpy as np
 
 import pytest
 
+from shout_daemon.asr import TranscriptionResult, UnsupportedVocabularyError
 from shout_daemon.protocol import (
     Message,
     encode_message,
@@ -91,6 +95,55 @@ async def _run_server_test(socket_path: Path, body):
     finally:
         server.request_stop()
         await asyncio.wait_for(serve_task, timeout=5.0)
+
+
+@pytest.mark.parametrize("vocabulary", [None, "word", [""], ["x"] * 129, ["é" * 129], ["\u0000"]])
+def test_invalid_vocabulary_is_bad_request(socket_path, vocabulary):
+    server = DaemonServer(socket_path)
+    server.asr.model = Mock()
+    server.asr.transcribe_array = Mock()
+    header, _ = asyncio.run(server._dispatch(Message(
+        header={"type": "transcribe", "vocabulary": vocabulary},
+        payload=np.zeros(16, dtype="<f4").tobytes(),
+    )))
+    assert header["code"] == "bad_request"
+    server.asr.transcribe_array.assert_not_called()
+
+
+@pytest.mark.parametrize("extra, expected", [
+    ({}, []), ({"vocabulary": []}, []),
+    ({"vocabulary": [" Secret\t Phrase ", "secret phrase"]}, ["Secret Phrase"]),
+])
+def test_socket_passes_request_vocabulary_without_logging(socket_path, extra, expected, caplog):
+    async def body(server):
+        server.asr.model = Mock()
+        server.asr.transcribe_array = Mock(return_value=TranscriptionResult("ok", 1.0, 0.1))
+        server.asr.memory_state = Mock(return_value=(0, 0, 0))
+        reader, writer = await _connect(socket_path)
+        try:
+            await _client_send(writer, {"type": "transcribe", **extra}, np.zeros(16, dtype="<f4").tobytes())
+            response = await _client_recv(reader)
+            assert response.type == "ok"
+            assert server.asr.transcribe_array.call_args.args[2] == expected
+        finally:
+            writer.close()
+            await writer.wait_closed()
+    with caplog.at_level("INFO"):
+        asyncio.run(_run_server_test(socket_path, body))
+    assert "Secret" not in caplog.text
+    assert "secret phrase" not in caplog.text
+
+
+def test_unsupported_vocabulary_returns_explicit_error(socket_path):
+    server = DaemonServer(socket_path)
+    server.asr.model = Mock()
+    server.asr.transcribe_array = Mock(side_effect=UnsupportedVocabularyError("unsupported model"))
+    header, _ = asyncio.run(server._dispatch(Message(
+        header={"type": "transcribe", "vocabulary": ["private"]},
+        payload=np.zeros(16, dtype="<f4").tobytes(),
+    )))
+    assert header["code"] == "unsupported_vocabulary"
+    assert "private" not in header["message"]
 
 
 # ---------------------------------------------------------------------------- tests

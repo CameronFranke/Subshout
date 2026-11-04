@@ -19,7 +19,11 @@ Message kinds
 -------------
 Requests (Swift → daemon):
     {"type": "load_model",  "model_id": str}                 (no payload)
-    {"type": "transcribe",  "sample_rate": int}              payload = float32 LE PCM
+    {"type": "transcribe", "sample_rate": int,
+     "vocabulary": [str, ...]}                               payload = float32 LE PCM
+    vocabulary is optional (default []): at most 128 raw entries, each nonempty
+    after whitespace normalization and at most 256 UTF-8 bytes. Non-whitespace
+    control characters are rejected; duplicates are removed case-insensitively.
     {"type": "status"}                                        (no payload)
     {"type": "shutdown"}                                      (no payload)
 
@@ -49,6 +53,7 @@ from __future__ import annotations
 
 import json
 import struct
+import unicodedata
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -62,6 +67,36 @@ _HEADER_LEN_BYTES = 4
 # while preventing an IPC peer from exhausting unified memory.
 MAX_HEADER_BYTES = 1 << 20
 MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
+MAX_VOCABULARY_ENTRIES = 128
+MAX_VOCABULARY_PHRASE_BYTES = 256
+
+
+def normalize_vocabulary(value: object) -> list[str]:
+    """Validate request vocabulary without including private phrases in errors."""
+    if not isinstance(value, list):
+        raise ValueError("vocabulary must be an array of strings")
+    if len(value) > MAX_VOCABULARY_ENTRIES:
+        raise ValueError("vocabulary must contain at most 128 entries")
+    phrases: list[str] = []
+    seen: set[str] = set()
+    for phrase in value:
+        if not isinstance(phrase, str):
+            raise ValueError("vocabulary entries must be strings")
+        if any(
+            unicodedata.category(char).startswith("C") and not char.isspace()
+            for char in phrase
+        ):
+            raise ValueError("vocabulary entries must not contain control characters")
+        normalized = " ".join(phrase.split())
+        if not normalized:
+            raise ValueError("vocabulary entries must not be empty")
+        if len(normalized.encode("utf-8")) > MAX_VOCABULARY_PHRASE_BYTES:
+            raise ValueError("vocabulary entries must be at most 256 UTF-8 bytes")
+        key = normalized.casefold()
+        if key not in seen:
+            phrases.append(normalized)
+            seen.add(key)
+    return phrases
 
 
 class ProtocolError(Exception):

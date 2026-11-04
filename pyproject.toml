@@ -5,7 +5,7 @@ description = "subshout ASR daemon: parakeet-mlx behind a Unix socket, driven by
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.4",
-    "parakeet-mlx>=0.5.1",
+    "parakeet-mlx>=0.7.0",
     "soundfile>=0.13.1",  # only for tests / CLI smoke; daemon receives PCM over IPC
 ]
 

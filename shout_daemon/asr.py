@@ -21,9 +21,15 @@ from typing import Callable, TypeVar
 import mlx.core as mx
 import numpy as np
 
-from parakeet_mlx import from_pretrained
+from parakeet_mlx import boost, from_pretrained
 from parakeet_mlx.audio import get_logmel
-from parakeet_mlx.parakeet import BaseParakeet
+from parakeet_mlx.parakeet import (
+    BaseParakeet,
+    Beam,
+    DecodingConfig,
+    ParakeetRNNT,
+    ParakeetTDT,
+)
 
 
 T = TypeVar("T")
@@ -33,6 +39,10 @@ T = TypeVar("T")
 # serially, so reuse beyond the current request is not worth exhausting unified
 # memory.
 _MLX_CACHE_LIMIT_BYTES = 256 * 1024 * 1024
+
+
+class UnsupportedVocabularyError(ValueError):
+    """The loaded model cannot apply custom vocabulary during decoding."""
 
 
 @dataclass
@@ -97,12 +107,17 @@ class ParakeetASR:
         )
 
     def transcribe_array(
-        self, audio: np.ndarray, sample_rate: int = 16_000
+        self,
+        audio: np.ndarray,
+        sample_rate: int = 16_000,
+        vocabulary: list[str] | None = None,
     ) -> TranscriptionResult:
         """Transcribe a 1-D float32 numpy array at the model's sample rate.
 
         Bypasses parakeet-mlx's ffmpeg-backed file loader so we don't need
-        ffmpeg installed. Mirrors the model's own preprocessing.
+        ffmpeg installed. Mirrors the model's own preprocessing. Vocabulary
+        must already be validated by the protocol boundary. A fresh decoder
+        config is built per request; empty vocabulary keeps upstream greedy.
         """
         if self.model is None:
             raise RuntimeError("Model not loaded")
@@ -114,14 +129,46 @@ class ParakeetASR:
         def _do_transcribe() -> TranscriptionResult:
             assert self.model is not None
             t0 = time.perf_counter()
-            x = mx.array(audio)
-            mel = get_logmel(x, self.model.preprocessor_config)
-            results = self.model.generate(mel)
-            text = results[0].text if results else ""
-            # Only `text` escapes this scope. Return temporary feature and
-            # decoder buffers to the system after each serial request.
-            del results, mel, x
-            mx.clear_cache()
+            decoding_config = None
+            if vocabulary:
+                # The hybrid TDT/CTC model subclasses TDT and uses its decoder.
+                # CTC does not apply Beam.booster: never silently ignore words.
+                if not isinstance(self.model, (ParakeetTDT, ParakeetRNNT)):
+                    raise UnsupportedVocabularyError(
+                        "custom vocabulary requires a TDT or RNN-T model"
+                    )
+                tokens = self.model.vocabulary
+                if not tokens or not all(isinstance(token, str) for token in tokens):
+                    raise UnsupportedVocabularyError(
+                        "loaded model has no compatible token vocabulary"
+                    )
+                word_booster = boost.words(
+                    {phrase.casefold(): 1.5 for phrase in vocabulary}
+                )
+                # Matching is case-insensitive, but generated spelling remains
+                # the model's own. prebind handles casefold expansions too.
+                word_booster = boost.prebind(str.casefold, word_booster)
+                decoding_config = DecodingConfig(
+                    decoding=Beam(
+                        beam_size=2, booster=boost.lift(word_booster, tokens)
+                    )
+                )
+            try:
+                x = mx.array(audio)
+                mel = get_logmel(x, self.model.preprocessor_config)
+                if decoding_config is None:
+                    results = self.model.generate(mel)
+                else:
+                    results = self.model.generate(mel, decoding_config=decoding_config)
+                text = results[0].text if results else ""
+                # Only text escapes; release feature and decoder buffers.
+                del results, mel, x
+            finally:
+                if decoding_config is not None:
+                    # Upstream retains per-state MLX arrays in this global
+                    # cache if beam decoding raises before its own cleanup.
+                    boost.tabulate.cache_clear()
+                mx.clear_cache()
             dt = time.perf_counter() - t0
             return TranscriptionResult(
                 text=text,
