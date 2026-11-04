@@ -1,7 +1,8 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 
-/// SwiftUI Settings UI.  Tabs: Hotkey, Model, Sounds, About.
+/// SwiftUI Settings UI. Tabs: Hotkey, Microphone, Model, Sounds, About.
 struct SettingsView: View {
     @EnvironmentObject var controller: RecordingController
     @ObservedObject private var settings: AppSettings
@@ -13,6 +14,9 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             HotkeyTab().tabItem { Label("Hotkey", systemImage: "command") }
+                .environmentObject(settings)
+                .environmentObject(controller)
+            MicrophoneTab().tabItem { Label("Microphone", systemImage: "mic") }
                 .environmentObject(settings)
                 .environmentObject(controller)
             ModelTab().tabItem { Label("Model", systemImage: "cpu") }
@@ -239,6 +243,68 @@ private struct HotkeyRecorderField: View {
         default:
             break
         }
+    }
+}
+
+// MARK: - Microphone
+
+private struct MicrophoneTab: View {
+    @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var controller: RecordingController
+    @State private var devices: [AVCaptureDevice] = []
+    @State private var defaultName = "Unavailable"
+
+    private var preferredDeviceMissing: Bool {
+        !settings.microphoneID.isEmpty && !devices.contains { $0.uniqueID == settings.microphoneID }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Recording microphone").font(.headline)
+            Picker("Microphone", selection: $settings.microphoneID) {
+                Text("System Default (\(defaultName))").tag("")
+                ForEach(devices, id: \.uniqueID) { device in
+                    Text(device.localizedName).tag(device.uniqueID)
+                }
+                if preferredDeviceMissing {
+                    Text("Saved microphone (unavailable)").tag(settings.microphoneID)
+                }
+            }
+            Text("Changes apply to the next recording and only affect subshout.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            if preferredDeviceMissing {
+                Text("Your selected microphone is unavailable. New recordings will use the system default until it reconnects.")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+            if let notice = controller.microphoneNotice {
+                Text(notice).font(.callout).foregroundStyle(.orange)
+            }
+            Button("Refresh microphones", action: refreshDevices)
+            Spacer()
+        }
+        .onAppear(perform: refreshDevices)
+        // Raw notification names are stable across SDKs; their Swift symbols
+        // were renamed in newer SDKs and are unavailable on older build hosts.
+        .onReceive(NotificationCenter.default.publisher(
+            for: Notification.Name("AVCaptureDeviceWasConnectedNotification")
+        )) { _ in
+            refreshDevices()
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: Notification.Name("AVCaptureDeviceWasDisconnectedNotification")
+        )) { _ in
+            refreshDevices()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshDevices()
+        }
+    }
+
+    private func refreshDevices() {
+        devices = MicrophoneSelection.availableDevices()
+        defaultName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "Unavailable"
     }
 }
 

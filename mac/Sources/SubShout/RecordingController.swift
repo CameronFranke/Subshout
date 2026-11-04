@@ -24,6 +24,7 @@ final class RecordingController: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var lastTranscript: String = ""
+    @Published private(set) var microphoneNotice: String?
     @Published private(set) var daemonReady: Bool = false
 
     /// True once the global hotkey tap is alive and the required macOS privacy
@@ -200,7 +201,10 @@ final class RecordingController: ObservableObject {
                     return
                 }
                 do {
-                    try self.recorder.start()
+                    self.microphoneNotice = nil
+                    self.microphoneNotice = try self.recorder.start(
+                        preferredMicrophoneID: self.settings.microphoneID
+                    )
                     self.recordingStartedAt = Date()
                     self.state = .recording
                     self.pill.show()

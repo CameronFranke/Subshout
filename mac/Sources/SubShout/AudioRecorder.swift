@@ -3,7 +3,7 @@ import CoreMedia
 import Foundation
 import OSLog
 
-/// Captures from the default input device and produces mono little-endian
+/// Captures from the selected input device and produces mono little-endian
 /// float32 16 kHz PCM on stop.
 ///
 /// Earlier versions used `AVAudioEngine.inputNode.installTap`. That worked for
@@ -66,11 +66,22 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
 
     // MARK: - Start / Stop
 
-    func start() throws {
-        guard session == nil else { return }
+    /// Returns a user-visible notice when a missing preferred mic required fallback.
+    @discardableResult
+    func start(preferredMicrophoneID: String = "") throws -> String? {
+        guard session == nil else { return nil }
 
-        guard let device = AVCaptureDevice.default(for: .audio) else {
-            throw SubShoutError.audioEngineFailed("no default audio input device")
+        let devices = MicrophoneSelection.availableDevices()
+        let defaultDevice = AVCaptureDevice.default(for: .audio)
+        let selection = MicrophoneSelection(
+            preferredID: preferredMicrophoneID,
+            availableIDs: devices.map(\.uniqueID),
+            defaultID: defaultDevice?.uniqueID
+        )
+        guard let selectedID = selection.deviceID,
+              let device = devices.first(where: { $0.uniqueID == selectedID })
+                ?? (defaultDevice?.uniqueID == selectedID ? defaultDevice : nil) else {
+            throw SubShoutError.audioEngineFailed("no available audio input device")
         }
 
         let newSession = AVCaptureSession()
@@ -130,6 +141,10 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
             newSession.startRunning()
             self?.log.info("capture session running=\(newSession.isRunning, privacy: .public)")
         }
+        if selection.usedFallback {
+            return "Last recording used system default (\(device.localizedName)) because the selected microphone was unavailable."
+        }
+        return nil
     }
 
     /// Stop capture and return the accumulated PCM as little-endian float32
